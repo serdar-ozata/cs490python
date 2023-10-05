@@ -10,7 +10,7 @@ from tqdm import tqdm
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('core_cnt', metavar='K', type=int, help='core count')
 parser.add_argument("-loop", type=int, help='end core count (excluded)')
-parser.add_argument("-interval", type=int, help='core count interval', default=1)
+parser.add_argument("-interval", type=int, help='core count increment', default=1)
 parser.add_argument("-exp", help='multiply core count by 2 in each iteration', action='store_true')
 args = parser.parse_args()
 print(args)

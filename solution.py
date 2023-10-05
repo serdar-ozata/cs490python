@@ -117,11 +117,11 @@ else:
     util.save_2basic_plot(results[4], results[1], results[2], "Core Count", "Time (s)",
                           "Execution Times", "Algorithm", "Algorithm & Parsing", "linear")
     util.save_2basic_plot(results[4], results[5], results[6], "Core Count", None,
-                          "Extended-Non & extended Operations", "Extended", "Non-Extended")
+                          "Expanded & Non-Expanded Operations", "Extended", "Non-Extended")
     util.save_2basic_plot(results[4], results[7], results[8], "Core Count", None,
                           "Square Sum of Volumes", "Optimized", "Initial")
     util.save_2basic_plot(results[4], results[10], results[11], "Core Count", None,
                           "Highest Volumes", "Optimized", "Initial")
     util.save_basic_plot(results[4], results[12], "Core Count", "Average", "Average send volume")
     util.save_2basic_plot(results[4], results[13], results[14], "Core Count", None,
-                          "Standard Deviation of Volume Between Cores", "Optimized", "Initial")
+                          "Standard Deviation of Volumes Between Cores", "Optimized", "Initial")

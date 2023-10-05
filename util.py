@@ -2,17 +2,24 @@ import numpy as np
 
 from torch_geometric.datasets import Planetoid, PPI, Reddit, Amazon, KarateClub
 import torch_geometric.transforms as transforms
+import torch_geometric.utils as tl
+import pymetis
+from scipy.sparse import coo_matrix
+import sys
+import matplotlib.pyplot as plt
 
 
 def get_coo_mat():
-    dataset = Planetoid(root="tutorial1", name="Cora", transform=transforms.NormalizeFeatures())
+    dataset = Reddit(root="tutorial1", transform=transforms.NormalizeFeatures())
     # dataset = KarateClub(transform=transforms.NormalizeFeatures())
     data = dataset[0]
     coo_data = data.edge_index.numpy()
     vtx_count = data.num_nodes
     print("Directed:", data.is_directed())
-    print("Edge count: %d" % len(coo_data[0]))
-    return coo_data, vtx_count
+    mappings = [[] for _ in range(vtx_count)]
+    for i in range(len(coo_data[0])):
+        mappings[coo_data[0][i]].append(coo_data[1][i])
+    return coo_data, vtx_count, mappings
 
 
 def create_coo_mat():
@@ -102,3 +109,40 @@ class dist_tracker:
         self.other_send_list.clear()
         self.send_list.clear()
         self.other_idx = -1
+
+
+def write_results(arr):
+    sys.stdout = open(f"out/reddit_{arr[4]}cores.txt", "w")
+    print("Vertex Count:", arr[0])
+    print("Edge count: %d" % arr[1])
+    print(f"Algorithm execution time: {arr[2]} seconds")
+    print(f"Algorithm and data parsing execution time: {arr[3]} seconds")
+    print("Core Count %d" % arr[4])
+    print("Number of extend operations: %d" % arr[5])
+    print("Number of non-extended operations: %d" % arr[6])
+    print("Min Sum Square: %d, Initial: %d" % (arr[7], arr[8]))
+    print("Min Sum Square without delta: %d" % arr[9])
+    print("Highest Volume %d, Initial: %d" % (arr[10], arr[11]))
+    sys.stdout.close()
+
+
+def save_basic_plot(x, y1, xlabel, ylabel, title):
+    fig, ax = plt.subplots()
+    ax.plot(x, y1)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    plt.savefig(f"out/{title}.png")
+
+
+def save_2basic_plot(x, y1, y2, xlabel, ylabel, title, y1name, y2name, yscale=None):
+    fig, ax = plt.subplots()
+    ax.plot(x, y1, label=y1name)
+    ax.plot(x, y2, label=y2name)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    if yscale is not None:
+        ax.set_yscale(yscale)
+    ax.legend()
+    plt.savefig(f"out/{title}.png")

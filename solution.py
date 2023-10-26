@@ -43,15 +43,6 @@ def execute(core_cnt):
 
     parse_start_time = time.perf_counter()
 
-    # for v_i in range(len(adj_mat)):
-    #     for v_j in adj_mat[v_i]:
-    #         sender_idx = mappings[v_i]
-    #         rec_idx = mappings[v_j]
-    #         if rec_idx == sender_idx:
-    #             continue
-    #         if v_i not in send_list[sender_idx][1]:
-    #             send_list[sender_idx][1][v_i] = set()
-    #         send_list[sender_idx][1][v_i].add(rec_idx)
     for i in range(len(coo_data[0])):
         sender_idx = mappings[coo_data[0, i]]
         rec_idx = mappings[coo_data[1, i]]
@@ -176,13 +167,22 @@ def assign(core_dest_data: DestData, h: int, send_set: set, opt_send_list: list[
     best_assignment_type = Assigment.NO_REASSIGNMENT
     expand_core = -1  # means self
     if len(send_set) >= MIN_REASSIGN_LIMIT:
-        for other_idx in send_set:
-            other_dest_data = opt_send_list[other_idx]
-            delta_cost, assignment_type = util.assignment_cost(other_dest_data, core_dest_data, h, send_set)
-            if delta_cost < best_del_cost:
-                best_assignment_type = assignment_type
-                best_del_cost = delta_cost
-                expand_core = other_idx
+        # square_sum_cost
+        #     for other_idx in send_set:
+        #         other_dest_data = opt_send_list[other_idx]
+        #         delta_cost, assignment_type = util.assignment_cost(other_dest_data, core_dest_data, h, send_set)
+        #         if delta_cost < best_del_cost:
+        #             best_assignment_type = assignment_type
+        #             best_del_cost = delta_cost
+        #             expand_core = other_idx
+        # lowest vol cost
+        other_idx = min(send_set, key=lambda i: opt_send_list[i].volume)
+        other_dest_data = opt_send_list[other_idx]
+        delta_cost, assignment_type = util.assignment_cost(other_dest_data, core_dest_data, h, send_set)
+        if delta_cost < best_del_cost:
+            best_assignment_type = assignment_type
+            best_del_cost = delta_cost
+            expand_core = other_idx
     t.cost += best_del_cost
     match best_assignment_type:
         case Assigment.NO_REASSIGNMENT:

@@ -2,7 +2,18 @@ import numpy as np
 
 import util
 
-util.create_excel(5, np.ones(shape=(9, 23)), ["oads", "adsas", "astreasd"])
+
+class ArgTest:
+    def __init__(self):
+        self.core_cnt = 9
+        self.volumemode = 0
+        self.noconstructive = False
+        self.noiterative = False
+
+
+# util.create_excel(ArgTest(), np.ones(shape=(9, 23)) * 2, ["oads", "adsas", "astreasd"])
+
+print((5, (5, 3)))
 
 # util.assignment_cost_test(5, 10, 10)
 

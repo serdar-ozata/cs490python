@@ -16,6 +16,7 @@ def cv(x):
 
 
 def get_coo_mat(dataset_name):
+    is_from_torch = True
     match dataset_name:
         case "Reddit":
             dataset = Reddit(root="data/Reddit")
@@ -30,6 +31,7 @@ def get_coo_mat(dataset_name):
         case "Flickr":
             dataset = Flickr(root="data/Flickr")
         case _:
+            is_from_torch = False
             # read from mmdsets folder
             fpath = f"mmdsets/{dataset_name}.mtx"
             nr, nc, nnz, fmt, fld, sym = mminfo(fpath)
@@ -37,21 +39,15 @@ def get_coo_mat(dataset_name):
             coo_data = mmfile.tocoo()
             # remove values from the matrix only row and col
             coo_data = np.array([coo_data.row, coo_data.col])
-            print(coo_data)
             vtx_count = nr
-            adj = [[] for _ in range(vtx_count)]
-            wg = np.zeros(dtype=int, shape=vtx_count)
-            for i in range(len(coo_data[0])):
-                adj[coo_data[0][i]].append(coo_data[1][i])
-                wg[coo_data[0][i]] += 1
-            return coo_data, vtx_count, adj, wg
 
-    data = dataset[0]
-    coo_data = data.edge_index.numpy()
-    vtx_count = data.num_nodes
-    # create the matrix market file from coo_data
-    if not os.path.exists(f"out/{dataset_name}.mtx"):
-        mmwrite(f"out/{dataset_name}.mtx", coo_data)
+    if is_from_torch:
+        data = dataset[0]
+        coo_data = data.edge_index.numpy()
+        vtx_count = data.num_nodes
+        # create the matrix market file from coo_data
+        if not os.path.exists(f"out/{dataset_name}.mtx"):
+            mmwrite(f"out/{dataset_name}.mtx", coo_data)
 
     adj = [[] for _ in range(vtx_count)]
     wg = np.zeros(dtype=int, shape=vtx_count)

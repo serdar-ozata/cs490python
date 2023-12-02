@@ -17,7 +17,7 @@ parser.add_argument("-l", "--loop", type=int, help='end core count (excluded)')
 group = parser.add_mutually_exclusive_group()
 group.add_argument("-i", "--interval", type=int, help='core count increment', default=1)
 group.add_argument("-e", "--exp", type=int, help='multiply core count by n in each iteration')
-parser.add_argument('-v', '--volumemode', type=int, help='0:ge Empty (def), 1: Receive Vol, 2: METIS, 3: Rec + METIS',
+parser.add_argument('-v', '--volumemode', type=int, help='0: Empty (def), 1: Receive Vol, 2: METIS, 3: Rec + METIS',
                     default=0)
 parser.add_argument('-d', '--datasets', type=str, nargs='+', help='Dataset names')
 

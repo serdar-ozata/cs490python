@@ -94,14 +94,12 @@ class DestData:
         self.send_vol: int = 0
         self.id = vid
         self.recv_vol = recv_vol
-
-    def tr_vol(self):
-        return len(self.expands.keys())
-
-    def oet_ret_vol(self) -> tuple[int, int]:
+        
+    def tr_oet_ret_vol(self) -> tuple[int, int, int]:
+        tr_vol = len(self.reassign_cores.keys())
         oet_vol: int = np.sum([len(v) if DestData.partition[k] == self.id else 0 for k, v in self.expands.items()],
                               dtype=int)
-        return oet_vol, self.send_vol - oet_vol
+        return tr_vol, oet_vol, self.send_vol - oet_vol - tr_vol
 
     def volume(self):
         return self.send_vol + self.recv_vol

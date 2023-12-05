@@ -46,7 +46,6 @@ def assign_comm_list(dest_data: DestData, comm_list: list[(dict[list], dict[list
 
 
 def write_ranges(file, comm_list: (dict[list], dict[list]), phase_idx: int, curr_ptr: int, core_cnt: int):
-    file.write(struct.pack('i', curr_ptr))
     for i in range(core_cnt):
         curr_ptr += 4 * len(comm_list[i][phase_idx]) if i in comm_list else 0
         file.write(struct.pack('i', curr_ptr))
@@ -59,7 +58,7 @@ def init_bin_file(file, num_processors):
 
     # Writing n * 8 bytes as a placeholder for processor start positions
     for _ in range(num_processors):
-        file.write(struct.pack('l', 0))
+        file.write(struct.pack('q', 0))
 
 
 def write_bin_file(file, arr):
@@ -75,14 +74,14 @@ def override_bin_file(file, num, loc):
 
 def update_start_positions(file, processor_start_positions):
     file.seek(0)
-    # Update the first n * 4 bytes in the file with actual processor start positions
+    # Update the first n * 8 bytes in the file with actual processor start positions
     for position in processor_start_positions:
-        file.write(struct.pack('i', position))
+        file.write(struct.pack('q', position))
 
 
 # writes phase partitions to binary file
 def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str):
-    com_type_vols = [(sl.tr_vol(), *sl.oet_ret_vol()) for sl in opt_send_list]
+    com_type_vols = [sl.tr_oet_ret_vol() for sl in opt_send_list]
     tr_max_idx = np.argmax([tup[0] for tup in com_type_vols])
     phase1_min_idx = np.argmax([tup[0] + tup[1] for tup in com_type_vols])
 
@@ -109,7 +108,7 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str):
         # send part
         assign_comm_list(dest_data, send_lists, True, p1_oet_selection)
     # Create and open the binary file with placeholder values
-    fname = f"out/{name}-{core_cnt}-phases.bin"
+    fname = f"out/{name}.phases.{core_cnt}.bin"
     with open(fname, 'w+b') as file:
         init_bin_file(file, core_cnt)
         proc_ptrs = []
@@ -118,13 +117,13 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str):
             proc_ptrs.append(file.tell())
             # selected[] and TRs will be uploaded in phase 1
             tr_v, oet_v, ret_v = com_type_vols[i]
-
             selections, selected_sz = phase1_oet_selections[i]
             unselected_sz = oet_v - selected_sz
             # write counts
             write_bin_file(file, [tr_v, selected_sz, unselected_sz, ret_v])
             # write ranges
             curr_ptr = 0
+            file.write(struct.pack('i', curr_ptr))
             curr_ptr = write_ranges(file, send_lists[i], 0, curr_ptr, core_cnt)
             curr_ptr = write_ranges(file, recv_lists[i], 0, curr_ptr, core_cnt)
             curr_ptr = write_ranges(file, send_lists[i], 1, curr_ptr, core_cnt)
@@ -140,6 +139,7 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str):
 
 # writes vertex mappings to binary file
 def write_partitions(mappings: list, core_cnt: int, name: str):
-    fname = f"out/{name}-{core_cnt}-partition.bin"
-    with open(fname, 'w+b') as file:
-        write_bin_file(file, mappings)
+    fname = f"out/{name}.inpart.{core_cnt}"
+    with open(fname, 'w') as file:
+        for m in mappings:
+            file.write(f"{m}\n")

@@ -34,20 +34,22 @@ def assign_comm_list(dest_data: DestData, comm_list: list[(dict[list], dict[list
                 dict_idx = 0
             else:
                 dict_idx = 1
-            if main_idx not in comm_list[other_idx][dict_idx]:
-                comm_list[other_idx][dict_idx][main_idx] = []
-            comm_list[other_idx][dict_idx][main_idx].append(vtx)
+            if other_idx not in comm_list[main_idx][dict_idx]:
+                comm_list[main_idx][dict_idx][other_idx] = []
+            comm_list[main_idx][dict_idx][other_idx].append(vtx)
     for vtx, rec_idx in dest_data.reassign_cores.items():
         main_idx = sender_idx if send else rec_idx
         other_idx = rec_idx if send else sender_idx
-        if main_idx not in comm_list[other_idx]:
-            comm_list[other_idx][0][main_idx] = []
-        comm_list[other_idx][0][main_idx].append(vtx)
+        if other_idx not in comm_list[other_idx][0]:
+            comm_list[main_idx][0][other_idx] = []
+        comm_list[main_idx][0][other_idx].append(vtx)
 
 
-def write_ranges(file, comm_list: (dict[list], dict[list]), phase_idx: int, curr_ptr: int, core_cnt: int):
+def write_ranges(file, comm_list: (dict[list], dict[list]), phase_idx: int, core_cnt: int):
+    curr_ptr = 0
+    file.write(struct.pack('i', curr_ptr))
     for i in range(core_cnt):
-        curr_ptr += 4 * len(comm_list[i][phase_idx]) if i in comm_list else 0
+        curr_ptr += len(comm_list[phase_idx][i]) if i in comm_list[phase_idx] else 0
         file.write(struct.pack('i', curr_ptr))
     return curr_ptr
 
@@ -98,8 +100,7 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str):
                              zip(opt_send_list, [tup[0] for tup in com_type_vols])]
     # get recv & send lists (phase1, phase2)
     recv_lists: list[(dict[list], dict[list])] = [(dict(), dict()) for _ in range(core_cnt)]
-    send_lists: list[(dict[list], dict[list])] = [(dict(), dict()) for _ in range(
-        core_cnt)]
+    send_lists: list[(dict[list], dict[list])] = [(dict(), dict()) for _ in range(core_cnt)]
     for i in range(core_cnt):
         dest_data = opt_send_list[i]
         p1_oet_selection = phase1_oet_selections[i][0]
@@ -107,6 +108,12 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str):
         assign_comm_list(dest_data, recv_lists, False, p1_oet_selection)
         # send part
         assign_comm_list(dest_data, send_lists, True, p1_oet_selection)
+    # print send_lists and recv_lists volumes
+    send_vols = [sum(len(v) for v in send_lists[i][k].values()) for i in range(core_cnt) for k in range(2)]
+    recv_vols = [sum(len(v) for v in recv_lists[i][k].values()) for i in range(core_cnt) for k in range(2)]
+    if np.sum(send_vols) != np.sum(recv_vols):
+        print("BUG: send and recv volumes are not equal")
+        exit(1)
     # Create and open the binary file with placeholder values
     fname = f"out/{name}.phases.{core_cnt}.bin"
     with open(fname, 'w+b') as file:
@@ -117,21 +124,19 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str):
             proc_ptrs.append(file.tell())
             # selected[] and TRs will be uploaded in phase 1
             tr_v, oet_v, ret_v = com_type_vols[i]
+
             selections, selected_sz = phase1_oet_selections[i]
-            unselected_sz = oet_v - selected_sz
             # write counts
-            write_bin_file(file, [tr_v, selected_sz, unselected_sz, ret_v])
+            write_bin_file(file, [send_vols[i * 2], recv_vols[i * 2], send_vols[i * 2 + 1], recv_vols[i * 2 + 1]])
             # write ranges
-            curr_ptr = 0
-            file.write(struct.pack('i', curr_ptr))
-            curr_ptr = write_ranges(file, send_lists[i], 0, curr_ptr, core_cnt)
-            curr_ptr = write_ranges(file, recv_lists[i], 0, curr_ptr, core_cnt)
-            curr_ptr = write_ranges(file, send_lists[i], 1, curr_ptr, core_cnt)
-            curr_ptr = write_ranges(file, recv_lists[i], 1, curr_ptr, core_cnt)
+            write_ranges(file, send_lists[i], 0, core_cnt)
+            write_ranges(file, recv_lists[i], 0, core_cnt)
+            write_ranges(file, send_lists[i], 1, core_cnt)
+            write_ranges(file, recv_lists[i], 1, core_cnt)
             # write send and recv vertexes
-            for proc, vertexes in chain(send_lists[i][0].items(), recv_lists[i][0].items(), send_lists[i][1].items(),
-                                        recv_lists[i][1].items()):
-                write_bin_file(file, vertexes)
+            vertexes = chain(chain(*send_lists[i][0].values()), chain(*recv_lists[i][0].values()),
+                             chain(*send_lists[i][1].values()), chain(*recv_lists[i][1].values()))
+            write_bin_file(file, vertexes)
 
         # write proc ptrs
         update_start_positions(file, proc_ptrs)

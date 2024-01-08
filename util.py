@@ -46,8 +46,9 @@ def get_coo_mat(dataset_name):
         coo_data = data.edge_index.numpy()
         vtx_count = data.num_nodes
         # create the matrix market file from coo_data
-        if not os.path.exists(f"out/{dataset_name}.mtx"):
-            mmwrite(f"out/{dataset_name}.mtx", coo_data)
+        mmfpath = f"out/{dataset_name}.mtx"
+        if not os.path.exists(mmfpath):
+            mmwrite(mmfpath, coo_data)
 
     adj = [[] for _ in range(vtx_count)]
     wg = np.zeros(dtype=int, shape=vtx_count)

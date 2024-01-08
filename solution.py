@@ -116,7 +116,7 @@ def execute(core_cnt):
         # 22: sender's avg expand task size after reassignment
 
         execution_res = [vtx_count, len(coo_data[0]), execution_time, p_execution_time, core_cnt, t.reassign_cnt,
-                         t.non_reassign_cnt, t.reassign_vol, init_cost / t.cost,  # 8
+                         t.non_reassign_cnt, t.reassign_vol, init_cost / (t.cost + 0.00001),  # 8
                          np.sum(vols) / core_cnt, init_cv, opt_cv, np.max(vols), np.max(opt_vols), np.min(vols),
                          np.min(opt_vols),
                          degree_len, degree_sum / degree_len, degree_sum, e_degrees[-1], e_degrees[0],

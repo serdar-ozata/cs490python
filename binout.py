@@ -123,9 +123,11 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str):
             file.seek(0, 2)  # seek to end
             proc_ptrs.append(file.tell())
             # selected[] and TRs will be uploaded in phase 1
-            tr_v, oet_v, ret_v = com_type_vols[i]
 
-            selections, selected_sz = phase1_oet_selections[i]
+            # uncomment these if you need
+            # tr_v, oet_v, ret_v = com_type_vols[i]
+            # selections, selected_sz = phase1_oet_selections[i]
+
             # write counts
             write_bin_file(file, [send_vols[i * 2], recv_vols[i * 2], send_vols[i * 2 + 1], recv_vols[i * 2 + 1]])
             # write ranges
@@ -134,8 +136,8 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str):
             write_ranges(file, send_lists[i], 1, core_cnt)
             write_ranges(file, recv_lists[i], 1, core_cnt)
             # write send and recv vertexes
-            vertexes = chain(chain(*send_lists[i][0].values()), chain(*recv_lists[i][0].values()),
-                             chain(*send_lists[i][1].values()), chain(*recv_lists[i][1].values()))
+            vertexes = list(chain(chain(*send_lists[i][0].values()), chain(*recv_lists[i][0].values()),
+                             chain(*send_lists[i][1].values()), chain(*recv_lists[i][1].values())))
             write_bin_file(file, vertexes)
 
         # write proc ptrs
@@ -144,7 +146,7 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str):
 
 # writes vertex mappings to binary file
 def write_partitions(mappings: list, core_cnt: int, name: str):
-    fname = f"out/{name}.inpart.{core_cnt}"
+    fname = f"mmdsets/schemes/{name}.inpart.{core_cnt}"
     with open(fname, 'w') as file:
         for m in mappings:
             file.write(f"{m}\n")

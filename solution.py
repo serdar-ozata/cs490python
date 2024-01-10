@@ -10,35 +10,52 @@ from util import Assigment, MetricTracker, DestData, MIN_REASSIGN_LIMIT, get_opt
 from binout import partition_phases, write_partitions
 from metricsout import create_excel
 
-parser = argparse.ArgumentParser(description='Process some integers.')
-parser.add_argument('core_cnt', metavar='K', type=int, help='core count')
-parser.add_argument("-l", "--loop", type=int, help='end core count (excluded)')
+epilog_text = '''Matrix market files are read from the ./mmdsets foler. Phase partition file is written to the ./out 
+    folder. The other inpart files are written to ./mmdsets/schemes folder.'''
+parser = argparse.ArgumentParser(
+    description='''TODO description. Example usage: solution.py run --noconstructive 28 Flickr''',
+    epilog=epilog_text
+)
 
-group = parser.add_mutually_exclusive_group()
+# Add a subparsers to the parser
+subparsers = parser.add_subparsers(dest='mode', help='Mode of operation')
+
+# Create a group of arguments
+group = argparse.ArgumentParser(add_help=False)
+group.add_argument('--noconstructive', action='store_true', help='Disable constructive algorithm')
+group.add_argument('--noiterative', action='store_true', help='Disable iterative improvement algorithm')
+group.add_argument('-v', '--volumemode', type=int, help='Sets how the bins must be initalized. 0: Empty, 1: Receive Volumes (def)'
+                   , default=1, choices=range(0, 2))
+
+# Add the group to the 'run' and 'benchmark' parsers
+run_parser = subparsers.add_parser('run', help='Run the algorithm on a given dataset', parents=[group], epilog=epilog_text)
+benchmark_parser = subparsers.add_parser('benchmark', help='Benchmark the algorithm on given datasets and core counts. Creates an excel file in the ./out folder', parents=[group], epilog=epilog_text)
+
+run_parser.add_argument('core_cnt', metavar='K', type=int, help='processor count')
+run_parser.add_argument('dataset_name', type=str, help='Name of the dataset (matrix market files must be located in ./mmdests folder)')
+
+benchmark_parser.add_argument('core_cnt', metavar='K', type=int, help='processor count')
+benchmark_parser.add_argument("-l", "--loop", type=int, help='End core count (excluded). K becomes the start point. If left unsepicifed, it does not loop. Must be specified -e or -i is used.', default=None)
+
+group = benchmark_parser.add_mutually_exclusive_group()
 group.add_argument("-i", "--interval", type=int, help='core count increment', default=1)
 group.add_argument("-e", "--exp", type=int, help='multiply core count by n in each iteration')
-parser.add_argument('-v', '--volumemode', type=int, help='0: Empty (def), 1: Receive Vol, 2: METIS, 3: Rec + METIS',
-                    default=0)
-parser.add_argument('-d', '--datasets', type=str, nargs='+', help='Dataset names')
 
-parser.add_argument('--noconstructive', action='store_true')
-parser.add_argument('--noiterative', action='store_true')
+benchmark_parser.add_argument('-d', '--datasets', type=str, nargs='+',
+                              help='Dataset names (matrix market files must be located in ./mmdests folder)')
 
+# Existing code
 args = parser.parse_args()
 
 dec_order = True
 
 if args.noconstructive and args.noiterative:
     raise Exception("At least one of the algorithms must be enabled!")
-
-if args.noconstructive and args.volumemode < 2:
-    raise Exception(
-        "Either METIS (2) or Rec + METIS (3) --volumemode must be chosen if --noconstructive flag is enabled")
-
-if args.datasets is None:
+if args.noconstructive:
+    args.volumemode += 2
+if args.mode == 'benchmark' and args.datasets is None:
     raise Exception("At least one dataset must be specified")
 print(args)
-
 
 def get_core_iterator():
     if args.exp is None:
@@ -49,12 +66,12 @@ def get_core_iterator():
         return [(args.exp ** i) * args.core_cnt for i in range(iter_count)]
 
 
-def execute(core_cnt):
+def execute(core_cnt, ignore_benchmark):
     # generate a random ownership list
     # mappings = pymetis.part_graph(core_cnt, adjacency=adj_mat)[1]
     mappings = pymetis.part_graph(core_cnt, adjacency=adj_mat, vweights=wg)[1]
 
-    send_list = [dict() for i in range(core_cnt)]
+    send_list = [dict() for _ in range(core_cnt)]
     DestData.partition = mappings
     parse_start_time = time.perf_counter()
 
@@ -97,41 +114,41 @@ def execute(core_cnt):
 
     # write partitions as file
     write_partitions(mappings, core_cnt, name)
+    if not ignore_benchmark:
+        vols = [util.get_volume(send_list[opt_d.id]) + opt_d.recv_vol for opt_d in opt_send_list]
+        e_degrees = [len(arr) for s in send_list for arr in s.values()]
+        e_degrees.sort()
+        init_cv = util.cv(vols)
+        init_cost = np.sum([x ** 2 for x in vols])
 
-    vols = [util.get_volume(send_list[opt_d.id]) + opt_d.recv_vol for opt_d in opt_send_list]
-    e_degrees = [len(arr) for s in send_list for arr in s.values()]
-    e_degrees.sort()
-    init_cv = util.cv(vols)
-    init_cost = np.sum([x ** 2 for x in vols])
+        def extract_results():
+            opt_vols = [x.volume() for x in opt_send_list]
+            opt_cv = util.cv(opt_vols)
+            # 0: vertex cnt, 1: edge count, 2: algo execution_time, 3: parse and algo execution_time, 4: core_cnt,
+            # 5: t.reassign_cnt, 6: t.non_reassign_cnt, 7: reassign volume, 8: square sum / initial square sum,
+            # 9: avg send vol per processor, 10: i vol cv, 11: opt  vol cv
+            # 12: I highest volume, 13: highest volume, 14: I min vol, 15: min vol
+            # 16: expand task count, 17: expand degree avg, 18: expand degree sum
+            # 19: max expand degree, 20: min expand degree, 21: avg ed, 22: cv ed, 23: highest 10% / total
+            # 22: sender's avg expand task size after reassignment
 
-    def extract_results():
-        opt_vols = [x.volume() for x in opt_send_list]
-        opt_cv = util.cv(opt_vols)
-        # 0: vertex cnt, 1: edge count, 2: algo execution_time, 3: parse and algo execution_time, 4: core_cnt,
-        # 5: t.reassign_cnt, 6: t.non_reassign_cnt, 7: reassign volume, 8: square sum / initial square sum,
-        # 9: avg send vol per processor, 10: i vol cv, 11: opt  vol cv
-        # 12: I highest volume, 13: highest volume, 14: I min vol, 15: min vol
-        # 16: expand task count, 17: expand degree avg, 18: expand degree sum
-        # 19: max expand degree, 20: min expand degree, 21: avg ed, 22: cv ed, 23: highest 10% / total
-        # 22: sender's avg expand task size after reassignment
+            execution_res = [vtx_count, len(coo_data[0]), execution_time, p_execution_time, core_cnt, t.reassign_cnt,
+                             t.non_reassign_cnt, t.reassign_vol, init_cost / (t.cost + 0.00001),  # 8
+                             np.sum(vols) / core_cnt, init_cv, opt_cv, np.max(vols), np.max(opt_vols), np.min(vols),
+                             np.min(opt_vols),
+                             degree_len, degree_sum / degree_len, degree_sum, e_degrees[-1], e_degrees[0],
+                             util.cv(e_degrees),
+                             np.sum(e_degrees[degree_len - twenty_perc - 1:]) / degree_sum,
+                             # t.non_reassignment_vol / t.reassign_cnt
+                             ]
+            execution_res = np.around(execution_res, 2)
+            return execution_res
 
-        execution_res = [vtx_count, len(coo_data[0]), execution_time, p_execution_time, core_cnt, t.reassign_cnt,
-                         t.non_reassign_cnt, t.reassign_vol, init_cost / (t.cost + 0.00001),  # 8
-                         np.sum(vols) / core_cnt, init_cv, opt_cv, np.max(vols), np.max(opt_vols), np.min(vols),
-                         np.min(opt_vols),
-                         degree_len, degree_sum / degree_len, degree_sum, e_degrees[-1], e_degrees[0],
-                         util.cv(e_degrees),
-                         np.sum(e_degrees[degree_len - twenty_perc - 1:]) / degree_sum,
-                         # t.non_reassignment_vol / t.reassign_cnt
-                         ]
-        execution_res = np.around(execution_res, 2)
-        return execution_res
-
-    degree_sum = np.sum(e_degrees)
-    degree_len = len(e_degrees)
-    twenty_perc = int(math.floor(0.1 * degree_len))
-
-    return extract_results()
+        degree_sum = np.sum(e_degrees)
+        degree_len = len(e_degrees)
+        twenty_perc = int(math.floor(0.1 * degree_len))
+        return extract_results()
+    # return nothing if benchmark mode is not enabled
 
 
 def constructive_algorithm(opt_send_list: list[DestData], send_list: list[dict], t: MetricTracker,
@@ -230,19 +247,25 @@ def assign(core_dest_data: DestData, vtx: int, send_set: set, opt_send_list: lis
             t.set_vol_eq_split(other_vol, core_vol)
 
 
-if len(args.datasets) == 1 and args.loop is None and args.exp is None:
-    name = args.datasets[0]
+# Check the mode of operation and call the appropriate function
+if args.mode == 'run':
+    name = args.dataset_name
     coo_data, vtx_count, adj_mat, wg = util.get_coo_mat(name)
-    r = execute(args.core_cnt)
-else:
-    results = []
-    for name in tqdm(args.datasets):
+    execute(args.core_cnt, ignore_benchmark=True)
+elif args.mode == 'benchmark':
+    if len(args.datasets) == 1 and args.loop is None and args.exp is None:
+        name = args.datasets[0]
         coo_data, vtx_count, adj_mat, wg = util.get_coo_mat(name)
-        print(str(name) + ": " + str(vtx_count))
-        iterator = get_core_iterator()
-        for i in iterator:
-            r = execute(i)
-            # r.insert(0, name)
-            results.append(r)
-        del adj_mat
-    create_excel(args, results, args.datasets)
+        r = execute(args.core_cnt)
+    else:
+        results = []
+        for name in tqdm(args.datasets):
+            coo_data, vtx_count, adj_mat, wg = util.get_coo_mat(name)
+            print(str(name) + ": " + str(vtx_count))
+            iterator = get_core_iterator()
+            for i in iterator:
+                r = execute(i, ignore_benchmark=False)
+                # r.insert(0, name)
+                results.append(r)
+            del adj_mat
+        create_excel(args, results, args.datasets)

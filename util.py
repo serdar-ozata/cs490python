@@ -137,12 +137,12 @@ class DestData:
 
     def sqr_contribution_of(self, key):
         fwd_cost = 1 if key in self.reassign_cores else 0
-        return self.cost() - (self.volume() - len(self.expands[key]) - fwd_cost) ** 2
+        return self.cost() - (self.volume() - len(self.expands.get(key, [])) - fwd_cost) ** 2
 
     def remove_assignment(self, key):
-        e_len = len(self.expands[key])
+        e_len = len(self.expands.get(key, []))
         self.reassign_cores.pop(key, None)
-        self.expands.pop(key)
+        self.expands.pop(key, None)
         self.send_vol -= e_len
         return e_len
 

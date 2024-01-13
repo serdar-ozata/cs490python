@@ -7,7 +7,7 @@ import util
 import argparse
 from tqdm import tqdm
 from util import Assigment, MetricTracker, DestData, MIN_REASSIGN_LIMIT, get_opt_send_list
-from binout import partition_phases, write_partitions
+from binout import partition_phases, write_partitions, partition_one_phase
 from metricsout import create_excel
 
 epilog_text = '''Matrix market files are read from the ./mmdsets foler. Phase partition file is written to the ./out 
@@ -24,22 +24,30 @@ subparsers = parser.add_subparsers(dest='mode', help='Mode of operation')
 group = argparse.ArgumentParser(add_help=False)
 group.add_argument('--noconstructive', action='store_true', help='Disable constructive algorithm')
 group.add_argument('--noiterative', action='store_true', help='Disable iterative improvement algorithm')
-group.add_argument('-v', '--volumemode', type=int, help='Sets how the bins must be initalized. 0: Empty, 1: Receive Volumes (def)'
+group.add_argument('-v', '--volumemode', type=int,
+                   help='Sets how the bins must be initalized. 0: Empty, 1: Receive Volumes (def)'
                    , default=1, choices=range(0, 2))
+group.add_argument("--onephase", action="store_true", help="Additionally, output one phase partition file.")
 
 # Add the group to the 'run' and 'benchmark' parsers
-run_parser = subparsers.add_parser('run', help='Run the algorithm on a given dataset', parents=[group], epilog=epilog_text)
-benchmark_parser = subparsers.add_parser('benchmark', help='Benchmark the algorithm on given datasets and core counts. Creates an excel file in the ./out folder', parents=[group], epilog=epilog_text)
+run_parser = subparsers.add_parser('run', help='Run the algorithm on a given dataset', parents=[group],
+                                   epilog=epilog_text)
+benchmark_parser = subparsers.add_parser('benchmark',
+                                         help='Benchmark the algorithm on given datasets and core counts. Creates an excel file in the ./out folder',
+                                         parents=[group], epilog=epilog_text)
 
 run_parser.add_argument('core_cnt', metavar='K', type=int, help='processor count')
-run_parser.add_argument('dataset_name', type=str, help='Name of the dataset (matrix market files must be located in ./mmdests folder)')
+run_parser.add_argument('dataset_name', type=str,
+                        help='Name of the dataset (matrix market files must be located in ./mmdests folder)')
 
 benchmark_parser.add_argument('core_cnt', metavar='K', type=int, help='processor count')
-benchmark_parser.add_argument("-l", "--loop", type=int, help='End core count (excluded). K becomes the start point. If left unsepicifed, it does not loop. Must be specified -e or -i is used.', default=None)
+benchmark_parser.add_argument("-l", "--loop", type=int,
+                              help='End core count (excluded). K becomes the start point. If left unsepicifed, it does not loop. Must be specified if -e or -i is used.',
+                              default=None)
 
 group = benchmark_parser.add_mutually_exclusive_group()
-group.add_argument("-i", "--interval", type=int, help='core count increment', default=1)
-group.add_argument("-e", "--exp", type=int, help='multiply core count by n in each iteration')
+group.add_argument("-i", "--interval", type=int, help='Specify processor count increment', default=1)
+group.add_argument("-e", "--exp", type=int, help='Specify the multiplier of processor count in each iteration')
 
 benchmark_parser.add_argument('-d', '--datasets', type=str, nargs='+',
                               help='Dataset names (matrix market files must be located in ./mmdests folder)')
@@ -56,6 +64,7 @@ if args.noconstructive:
 if args.mode == 'benchmark' and args.datasets is None:
     raise Exception("At least one dataset must be specified")
 print(args)
+
 
 def get_core_iterator():
     if args.exp is None:
@@ -111,6 +120,9 @@ def execute(core_cnt, ignore_benchmark):
 
     # communication partition
     partition_phases(opt_send_list, core_cnt, name)
+
+    if args.onephase:
+        partition_one_phase(send_list, core_cnt, name)
 
     # write partitions as file
     write_partitions(mappings, core_cnt, name)
@@ -269,3 +281,4 @@ elif args.mode == 'benchmark':
                 results.append(r)
             del adj_mat
         create_excel(args, results, args.datasets)
+# else part is unreachable

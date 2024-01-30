@@ -108,8 +108,8 @@ def create_excel(args, data, datasets):
     ws["H2"] = "Non-R. Cnt"
     ws["I2"] = "Vol"
     ws.merge_cells(start_row=1, start_column=10, end_row=1, end_column=11)
-    ws["J1"] = "Init/Opt Ratio"
-    ws["J2"] = "Sqr Sum"
+    ws["J1"] = "Improvement(%)"
+    ws["J2"] = "Delay"
     ws["K2"] = "Max"
     ws.merge_cells(start_row=1, start_column=12, end_row=1, end_column=18)
     ws["L1"] = "Vol"
@@ -140,7 +140,7 @@ def create_excel(args, data, datasets):
         row_idx = i + 3
         for j in range(len(d)):
             if j == 9:
-                ws.cell(row=row_idx, column=j + increment, value=f"=ROUND(O{row_idx}/P{row_idx}, 3)")
+                ws.cell(row=row_idx, column=j + increment, value=f"=ROUND(100*(O{row_idx}-P{row_idx})/P{row_idx}, 3)")
                 increment += 1
             ws.cell(row=row_idx, column=j + increment, value=d[j])
     adjust_column_width_from_col(ws, 2, 1, ws.max_column)

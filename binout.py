@@ -81,16 +81,21 @@ def update_start_positions(file, processor_start_positions):
 # writes phase partitions to binary file
 def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str):
     com_type_vols = [sl.tr_oet_ret_vol() for sl in opt_send_list]
-    tr_max_idx = np.argmax([tup[0] for tup in com_type_vols])
-    phase1_min_idx = np.argmax([tup[0] + tup[1] for tup in com_type_vols])
 
-    if tr_max_idx > phase1_min_idx:
+    tr_max = np.max([tup[0] for tup in com_type_vols])
+
+    phase1_min = np.min([tup[0] + tup[1] for tup in com_type_vols])
+
+    # get the delay which will be returned
+    if tr_max > phase1_min:
         max_vol = np.max([x.volume() for x in opt_send_list])
+        delay = 100 * (tr_max - phase1_min) / max_vol
         print(
-            f"Partition of the sample {name}, {core_cnt} will not be perfect: %{100 * (tr_max_idx - phase1_min_idx) / max_vol} slower")
-        phase1_vol = com_type_vols[tr_max_idx][0]
+            f"Partition of the sample {name}, {core_cnt} will not be perfect: %{delay} slower")
+        phase1_vol = tr_max
     else:
-        phase1_vol = int(np.ceil((com_type_vols[tr_max_idx][0] + com_type_vols[phase1_min_idx][0]) / 2))
+        delay = 0
+        phase1_vol = int(np.ceil((tr_max + phase1_min) / 2))
 
     # get OETs that will be sent in phase 1
     phase1_oet_selections = [get_phase1_oets(phase1_vol, dest_data, tr_v) for dest_data, tr_v in
@@ -138,6 +143,8 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str):
 
         # write proc ptrs
         update_start_positions(file, proc_ptrs)
+
+    return delay
 
 
 def partition_one_phase(send_list: list[dict[set]], core_cnt: int, name: str):

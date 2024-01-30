@@ -119,7 +119,7 @@ def execute(core_cnt, ignore_benchmark):
     p_execution_time = end_time - parse_start_time
 
     # communication partition
-    partition_phases(opt_send_list, core_cnt, name)
+    two_phase_delay = partition_phases(opt_send_list, core_cnt, name)
 
     if args.onephase:
         partition_one_phase(send_list, core_cnt, name)
@@ -131,13 +131,14 @@ def execute(core_cnt, ignore_benchmark):
         e_degrees = [len(arr) for s in send_list for arr in s.values()]
         e_degrees.sort()
         init_cv = util.cv(vols)
-        init_cost = np.sum([x ** 2 for x in vols])
+
+        # init_cost = np.sum([x ** 2 for x in vols])
 
         def extract_results():
             opt_vols = [x.volume() for x in opt_send_list]
             opt_cv = util.cv(opt_vols)
             # 0: vertex cnt, 1: edge count, 2: algo execution_time, 3: parse and algo execution_time, 4: core_cnt,
-            # 5: t.reassign_cnt, 6: t.non_reassign_cnt, 7: reassign volume, 8: square sum / initial square sum,
+            # 5: t.reassign_cnt, 6: t.non_reassign_cnt, 7: reassign volume, 8: partition delay ,
             # 9: avg send vol per processor, 10: i vol cv, 11: opt  vol cv
             # 12: I highest volume, 13: highest volume, 14: I min vol, 15: min vol
             # 16: expand task count, 17: expand degree avg, 18: expand degree sum
@@ -145,7 +146,7 @@ def execute(core_cnt, ignore_benchmark):
             # 22: sender's avg expand task size after reassignment
 
             execution_res = [vtx_count, len(coo_data[0]), execution_time, p_execution_time, core_cnt, t.reassign_cnt,
-                             t.non_reassign_cnt, t.reassign_vol, init_cost / (t.cost + 0.00001),  # 8
+                             t.non_reassign_cnt, t.reassign_vol, two_phase_delay,  # 8
                              np.sum(vols) / core_cnt, init_cv, opt_cv, np.max(vols), np.max(opt_vols), np.min(vols),
                              np.min(opt_vols),
                              degree_len, degree_sum / degree_len, degree_sum, e_degrees[-1], e_degrees[0],

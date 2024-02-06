@@ -86,10 +86,10 @@ def execute(core_cnt, ignore_benchmark):
 
     # parse the data
     for i in range(len(coo_data[0])):
-        sender_idx = mappings[coo_data[0, i]]
-        rec_idx = mappings[coo_data[1, i]]
         v_i = coo_data[0, i]
         v_j = coo_data[1, i]
+        sender_idx = mappings[v_i]
+        rec_idx = mappings[coo_data[1, i]]
         if rec_idx == sender_idx:
             continue
         if v_i not in send_list[sender_idx]:
@@ -119,7 +119,7 @@ def execute(core_cnt, ignore_benchmark):
     p_execution_time = end_time - parse_start_time
 
     # communication partition
-    two_phase_delay = partition_phases(opt_send_list, core_cnt, name)
+    two_phase_delay = partition_phases(opt_send_list, core_cnt, name, util.PartitionType.LOWEST_VOLUME)
 
     if args.onephase:
         partition_one_phase(send_list, core_cnt, name)
@@ -220,7 +220,7 @@ def apply_vol_equalizing_split(opt_send_list: list[DestData], expand_core: int, 
 def apply_n_minus_1_to_1_split(core_dest_data: DestData, h: int, send_set: set, expand_core: int,
                                opt_send_list: list[DestData]):
     core_dest_data.set_forwarded_core(h, expand_core)
-    # core_dest_data.insert(h, [expand_core])
+    core_dest_data.insert(h, [expand_core])
     opt_send_list[expand_core].insert(h, send_set)
 
 

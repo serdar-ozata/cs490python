@@ -95,20 +95,21 @@ class DestData:
         self.send_vol: int = 0
         self.id = vid
         self.recv_vol = recv_vol
-        
+
+    # returns tr, oet, ret send volumes
     def tr_oet_ret_vol(self) -> tuple[int, int, int]:
-        tr_vol = len(self.reassign_cores.keys())
+        tr_vol = np.sum([len(self.expands.get(k, [])) for k in self.reassign_cores.keys()], dtype=int)
         oet_vol: int = np.sum([len(v) if DestData.partition[k] == self.id else 0 for k, v in self.expands.items()],
                               dtype=int)
+        oet_vol -= tr_vol
         return tr_vol, oet_vol, self.send_vol - oet_vol - tr_vol
 
     def volume(self):
         return self.send_vol + self.recv_vol
 
     # calculate the cost from the dict itself rather than the volume variable
-    def cost_raw(self):
+    def send_cost_raw(self):
         vol = sum(len(v) for v in self.expands.values())
-        vol += len(self.reassign_cores)
         return vol ** 2
 
     def cost(self):
@@ -126,18 +127,17 @@ class DestData:
     def set_forwarded_core(self, key, core_id):
         # if key in self.reassign_cores:
         #     raise Exception("Double forwarding attempt!")
-        if key not in self.reassign_cores:
-            self.send_vol += 1
+        # if key not in self.reassign_cores:
+        #     self.send_vol += 1
         self.reassign_cores[key] = core_id
 
     def remove_forwarded_core(self, key):
         ret = self.reassign_cores.pop(key, None)
-        if ret is not None:
-            self.send_vol -= 1
+        # if ret is not None:
+        #     self.send_vol -= 1
 
     def sqr_contribution_of(self, key):
-        fwd_cost = 1 if key in self.reassign_cores else 0
-        return self.cost() - (self.volume() - len(self.expands.get(key, [])) - fwd_cost) ** 2
+        return self.cost() - (self.volume() - len(self.expands.get(key, []))) ** 2
 
     def remove_assignment(self, key):
         e_len = len(self.expands.get(key, []))
@@ -194,6 +194,11 @@ class Assigment(Enum):
     HALF_SPLIT = 2
     VOL_EQ_SPLIT = 3
     NO_REASSIGNMENT = 0
+
+
+class PartitionType(Enum):
+    SUBSET_SUM = 0
+    LOWEST_VOLUME = 1
 
 
 def assignment_cost_test(a, b, set_size):

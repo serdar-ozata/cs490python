@@ -3,48 +3,30 @@ from itertools import chain
 from typing import Sized
 
 import numpy as np
-from util import DestData
+
+import partition
+from util import DestData, PartitionType
 
 
-def get_phase1_oets(phase_vol, dest_data: DestData, tr_v):
-    target_vol = phase_vol - tr_v
-    selected = set()
-    expands = [(k, len(v)) for k, v in dest_data.expands.items()]
-    expands.sort(key=lambda i: i[1])
-    # partition phase
-    for k, sz in expands:
-        # skip if it's a RET
-        if DestData.partition[k] != dest_data.id:
-            continue
-
-        if target_vol >= sz:
-            target_vol = target_vol - sz
-            selected.add(k)
-            if target_vol == 0:
-                break
-    selected_sz = phase_vol - tr_v - target_vol
-    return selected, selected_sz
-
-
-def assign_comm_list(dest_data: DestData, comm_list: list[(dict[list], dict[list])], send: bool, oet_selection: set):
+def assign_comm_list(dest_data: DestData, comm_list: list[(dict[list], dict[list])], send: bool, p1_selection: set):
     sender_idx = dest_data.id
     for vtx, v in dest_data.expands.items():
+        if vtx in p1_selection:
+            dict_idx = 0
+        else:
+            dict_idx = 1
         for rec_idx in v:
             main_idx = sender_idx if send else rec_idx
             other_idx = rec_idx if send else sender_idx
-            if vtx in oet_selection:
-                dict_idx = 0
-            else:
-                dict_idx = 1
             if other_idx not in comm_list[main_idx][dict_idx]:
                 comm_list[main_idx][dict_idx][other_idx] = []
             comm_list[main_idx][dict_idx][other_idx].append(vtx)
-    for vtx, rec_idx in dest_data.reassign_cores.items():
-        main_idx = sender_idx if send else rec_idx
-        other_idx = rec_idx if send else sender_idx
-        if other_idx not in comm_list[other_idx][0]:
-            comm_list[main_idx][0][other_idx] = []
-        comm_list[main_idx][0][other_idx].append(vtx)
+    # for vtx, rec_idx in dest_data.reassign_cores.items():
+    #     main_idx = sender_idx if send else rec_idx
+    #     other_idx = rec_idx if send else sender_idx
+    #     if other_idx not in comm_list[other_idx][0]:
+    #         comm_list[main_idx][0][other_idx] = []
+    #     comm_list[main_idx][0][other_idx].append(vtx)
 
 
 def write_ranges(file, data_list: dict[int, Sized], core_cnt: int):
@@ -79,43 +61,52 @@ def update_start_positions(file, processor_start_positions):
 
 
 # writes phase partitions to binary file
-def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str):
-    com_type_vols = [sl.tr_oet_ret_vol() for sl in opt_send_list]
-
-    tr_max = np.max([tup[0] for tup in com_type_vols])
-
-    phase1_min = np.min([tup[0] + tup[1] for tup in com_type_vols])
+def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, partition_type: PartitionType):
+    tr_vols, phase1_vols = partition.get_p1_threshold(opt_send_list)
+    tr_max = np.max(tr_vols)
+    phase1_min = np.min(phase1_vols)
 
     # get the delay which will be returned
     if tr_max > phase1_min:
         max_vol = np.max([x.volume() for x in opt_send_list])
         delay = 100 * (tr_max - phase1_min) / max_vol
-        print(
-            f"Partition of the sample {name}, {core_cnt} will not be perfect: %{delay} slower")
+        # print(f"Partition of the sample {name}, {core_cnt} will not be perfect: %{delay} slower")
         phase1_vol = tr_max
     else:
         delay = 0
         phase1_vol = int(np.ceil((tr_max + phase1_min) / 2))
+        # phase1_vol = tr_max
+    # phase partition
+    if partition_type == PartitionType.SUBSET_SUM:
+        phase1_selections = partition.get_phs1_subset_sum(opt_send_list, tr_vols, phase1_vol)
+    elif partition_type == PartitionType.LOWEST_VOLUME:
+        phase1_selections = partition.get_phs1_lowest_volume(opt_send_list, tr_vols, phase1_vol)
+    else:
+        raise Exception("Unknown partition type")
 
-    # get OETs that will be sent in phase 1
-    phase1_oet_selections = [get_phase1_oets(phase1_vol, dest_data, tr_v) for dest_data, tr_v in
-                             zip(opt_send_list, [tup[0] for tup in com_type_vols])]
     # get recv & send lists (phase1, phase2)
     recv_lists: list[(dict[list], dict[list])] = [(dict(), dict()) for _ in range(core_cnt)]
     send_lists: list[(dict[list], dict[list])] = [(dict(), dict()) for _ in range(core_cnt)]
     for i in range(core_cnt):
         dest_data = opt_send_list[i]
-        p1_oet_selection = phase1_oet_selections[i][0]
+        # get phase1 OETs and TRs
+        p1_selection = phase1_selections[i]
         # recv part
-        assign_comm_list(dest_data, recv_lists, False, p1_oet_selection)
+        assign_comm_list(dest_data, recv_lists, False, p1_selection)
         # send part
-        assign_comm_list(dest_data, send_lists, True, p1_oet_selection)
+        assign_comm_list(dest_data, send_lists, True, p1_selection)
     # print send_lists and recv_lists volumes
-    send_vols = [sum(len(v) for v in send_lists[i][k].values()) for i in range(core_cnt) for k in range(2)]
-    recv_vols = [sum(len(v) for v in recv_lists[i][k].values()) for i in range(core_cnt) for k in range(2)]
-    if np.sum(send_vols) != np.sum(recv_vols):
+    send_vols = [[sum([len(v) for v in send_lists[i][k].values()]) for i in range(core_cnt)] for k in range(2)]
+    recv_vols = [[sum([len(v) for v in recv_lists[i][k].values()]) for i in range(core_cnt)] for k in range(2)]
+    if np.sum(send_vols[0]) != np.sum(recv_vols[0]) or np.sum(send_vols[1]) != np.sum(recv_vols[1]):
         print("BUG: send and recv volumes are not equal")
         exit(1)
+    # difference between lowest and highest volume
+    p1_vols = [send_vols[0][i] + recv_vols[0][i] for i in range(core_cnt)]
+    min_vol = np.min(p1_vols)
+    max_vol = np.max(p1_vols)
+    print(
+        f"Partition of the sample {name}, {core_cnt}: min: {min_vol}, max: {max_vol}, delay: {delay}, threshold: {phase1_vol}")
     # Create and open the binary file with placeholder values
     fname = f"out/{name}.phases.{core_cnt}.bin"
     with open(fname, 'w+b') as file:
@@ -127,10 +118,9 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str):
 
             # uncomment these if you need them
             # tr_v, oet_v, ret_v = com_type_vols[i]
-            # selections, selected_sz = phase1_oet_selections[i]
-
+            # selections, selected_sz = phase1_selections[i]
             # write counts
-            write_bin_file(file, [send_vols[i * 2], recv_vols[i * 2], send_vols[i * 2 + 1], recv_vols[i * 2 + 1]])
+            write_bin_file(file, [send_vols[0][i], recv_vols[0][i], send_vols[1][i], recv_vols[1][i]])
             # write ranges
             write_ranges(file, send_lists[i][0], core_cnt)
             write_ranges(file, recv_lists[i][0], core_cnt)

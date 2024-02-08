@@ -25,15 +25,18 @@ group = argparse.ArgumentParser(add_help=False)
 group.add_argument('--noconstructive', action='store_true', help='Disable constructive algorithm')
 group.add_argument('--noiterative', action='store_true', help='Disable iterative improvement algorithm')
 group.add_argument('-v', '--volumemode', type=int,
-                   help='Sets how the bins must be initalized. 0: Empty, 1: Receive Volumes (def)'
+                   help='Sets how the bins must be initialized. 0: Empty, 1: Receive Volumes (def)'
                    , default=1, choices=range(0, 2))
 group.add_argument("--onephase", action="store_true", help="Additionally, output one phase partition file.")
+group.add_argument("--part_method", type=int, help="Partition method. 0: Subset-sum, 1: Fill by lowest volume (def) ",
+                   default=1, choices=range(0, 2))
 
 # Add the group to the 'run' and 'benchmark' parsers
 run_parser = subparsers.add_parser('run', help='Run the algorithm on a given dataset', parents=[group],
                                    epilog=epilog_text)
 benchmark_parser = subparsers.add_parser('benchmark',
-                                         help='Benchmark the algorithm on given datasets and core counts. Creates an excel file in the ./out folder',
+                                         help='Benchmark the algorithm on given datasets and core counts. Creates an '
+                                              'excel file in the ./out folder',
                                          parents=[group], epilog=epilog_text)
 
 run_parser.add_argument('core_cnt', metavar='K', type=int, help='processor count')
@@ -42,7 +45,8 @@ run_parser.add_argument('dataset_name', type=str,
 
 benchmark_parser.add_argument('core_cnt', metavar='K', type=int, help='processor count')
 benchmark_parser.add_argument("-l", "--loop", type=int,
-                              help='End core count (excluded). K becomes the start point. If left unsepicifed, it does not loop. Must be specified if -e or -i is used.',
+                              help='End core count (excluded). K becomes the start point and the program loops'
+                                   'for different processor counts. Must be specified if -e or -i is used.',
                               default=None)
 
 group = benchmark_parser.add_mutually_exclusive_group()
@@ -119,8 +123,8 @@ def execute(core_cnt, ignore_benchmark):
     p_execution_time = end_time - parse_start_time
 
     # communication partition
-    two_phase_delay = partition_phases(opt_send_list, core_cnt, name, util.PartitionType.LOWEST_VOLUME)
 
+    two_phase_delay = partition_phases(opt_send_list, core_cnt, name, args.part_method)
     if args.onephase:
         partition_one_phase(send_list, core_cnt, name)
 

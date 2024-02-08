@@ -18,7 +18,7 @@ def get_p1_threshold(opt_send_list):
     for i, dest_data in enumerate(opt_send_list):
         for k, v in dest_data.expands.items():
             # if not TR or RET
-            if dest_data.reassign_cores.get(k, None) is None and DestData.partition[k] == dest_data.id:
+            if dest_data.is_oet(k):
                 volumes[i] += len(v)
                 for rec_idx in v:
                     volumes[rec_idx] += 1
@@ -33,9 +33,9 @@ def get_phase1_oets(phase_vol, dest_data: DestData, tr_v):
     # partition phase
     for k, sz in expands:
         # skip if it's a RET
-        if DestData.partition[k] != dest_data.id:
+        if not dest_data.is_owner(k):
             continue
-        if dest_data.reassign_cores.get(k, None) is not None:
+        if dest_data.is_tr(k):
             selected.add(k)
             continue
 
@@ -55,8 +55,7 @@ def get_phs1_subset_sum(opt_send_list, tr_vols, phase1_vol):
 def get_phs1_lowest_volume(opt_send_list, tr_vols: list[int], threshold):
     volumes = tr_vols  # init with tr_vols (doesn't copy)
     expands = [
-        [(k, v) for k, v in dest_data.expands.items() if
-         DestData.partition[k] == dest_data.id and dest_data.reassign_cores.get(k, None) is None]
+        [(k, v) for k, v in dest_data.expands.items() if dest_data.is_oet(k)]
         for dest_data in opt_send_list]  # get only OETs
     expands = [sorted(arr, key=lambda i: len(i[1]), reverse=True) for arr in expands]
     selected = [set() for _ in range(len(opt_send_list))]

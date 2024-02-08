@@ -162,6 +162,17 @@ class DestData:
                 cntr -= 1
         return (self.volume() + cntr) ** 2 - self.cost()
 
+    # returns whether the key (vertex, row) is owned by the processor
+    def is_owner(self, key: int):
+        return DestData.partition[key] == self.id
+
+    def is_tr(self, key: int):
+        return key in self.reassign_cores
+
+    # assumes the task for this key exists
+    def is_oet(self, key: int):
+        return not self.is_owner(key) and not self.is_tr(key)
+
     def __str__(self):
         return self.expands.__str__()
 

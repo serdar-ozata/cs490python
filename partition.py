@@ -72,7 +72,7 @@ def get_phs1_lowest_volume(opt_send_list, tr_vols: list[int], threshold):
         # if there's no expand left, disable this processor
         if len(expands[min_idx]) == 0:
             volumes[min_idx] = threshold + 1
-            continue
+            break
 
         # find the lowest volume's highest expand [0]: k, [1]: values
         min_expand = expands[min_idx][0]

@@ -208,8 +208,8 @@ class Assigment(Enum):
 
 
 class PartitionType(Enum):
-    SUBSET_SUM = 0
     LOWEST_VOLUME = 1
+    SUBSET_SUM = 2
 
 
 def assignment_cost_test(a, b, set_size):

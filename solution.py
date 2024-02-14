@@ -21,42 +21,60 @@ parser = argparse.ArgumentParser(
 subparsers = parser.add_subparsers(dest='mode', help='Mode of operation')
 
 # Create a group of arguments
-group = argparse.ArgumentParser(add_help=False)
-group.add_argument('--noconstructive', action='store_true', help='Disable constructive algorithm')
-group.add_argument('--noiterative', action='store_true', help='Disable iterative improvement algorithm')
-group.add_argument('-v', '--volumemode', type=int,
-                   help='Sets how the bins must be initialized. 0: Empty, 1: Receive Volumes (def)'
-                   , default=1, choices=range(0, 2))
-group.add_argument("--onephase", action="store_true", help="Additionally, output one phase partition file.")
-group.add_argument("--part_method", type=int, help="Partition method. 0: Subset-sum, 1: Fill by lowest volume (def) ",
-                   default=1, choices=range(0, 2))
 
-# Add the group to the 'run' and 'benchmark' parsers
-run_parser = subparsers.add_parser('run', help='Run the algorithm on a given dataset', parents=[group],
+group = argparse.ArgumentParser(add_help=False)
+group.add_argument('--noconstructive', action='store_true',
+                   help='If set, the constructive algorithm will be disabled.')
+group.add_argument('--noiterative', action='store_true',
+                   help='If set, the iterative improvement algorithm will be disabled.')
+group.add_argument('-v', '--volumemode', type=int,
+                   help='Determines the initialization method for the bins. 0 for empty bins, 1 for bins with receive '
+                        'volumes. Default is 1.',
+                   default=1, choices=range(0, 2))
+group.add_argument("--itercvthreshold", type=float,
+                   help="Sets the threshold for the coefficient of variance of volumes. The iterative improvement "
+                        "algorithm will continue to run until this threshold is met or the maximum iteration count "
+                        "(--itermax) is reached. If not specified, the algorithm will run until the maximum iteration "
+                        "count is reached.",
+                   default=None)
+group.add_argument("--itermax", type=int, help="Sets the maximum iteration count. Default is 1.", default=1)
+group.add_argument("--onephase", action="store_true",
+                   help="If set, an additional one phase partition file will be output.")
+group.add_argument("--part_method", type=int,
+                   help="Determines the partition method. 1 for filling by lowest volume, 2 for subset-sum. Default "
+                        "is 1.",
+                   default=1, choices=range(1, 3))
+
+run_parser = subparsers.add_parser('run', help='Runs the algorithm on a specified dataset', parents=[group],
                                    epilog=epilog_text)
 benchmark_parser = subparsers.add_parser('benchmark',
-                                         help='Benchmark the algorithm on given datasets and core counts. Creates an '
-                                              'excel file in the ./out folder',
+                                         help='Benchmarks the algorithm on specified datasets and core counts. '
+                                              'Outputs an excel file in the ./out folder',
                                          parents=[group], epilog=epilog_text)
 
-run_parser.add_argument('core_cnt', metavar='K', type=int, help='processor count')
+run_parser.add_argument('core_cnt', metavar='K', type=int,
+                        help='The number of processors to be used.')
 run_parser.add_argument('dataset_name', type=str,
-                        help='Name of the dataset (matrix market files must be located in ./mmdests folder)')
+                        help='The name of the dataset. Corresponding matrix market files should be located in the '
+                             './mmdests folder.')
 
-benchmark_parser.add_argument('core_cnt', metavar='K', type=int, help='processor count')
+benchmark_parser.add_argument('core_cnt', metavar='K', type=int,
+                              help='The number of processors to be used.')
 benchmark_parser.add_argument("-l", "--loop", type=int,
-                              help='End core count (excluded). K becomes the start point and the program loops'
+                              help='The end core count (excluded). K becomes the start point and the program loops '
                                    'for different processor counts. Must be specified if -e or -i is used.',
                               default=None)
 
 group = benchmark_parser.add_mutually_exclusive_group()
-group.add_argument("-i", "--interval", type=int, help='Specify processor count increment', default=1)
-group.add_argument("-e", "--exp", type=int, help='Specify the multiplier of processor count in each iteration')
+group.add_argument("-i", "--interval", type=int,
+                   help='Specifies the increment for the processor count.', default=1)
+group.add_argument("-e", "--exp", type=int,
+                   help='Specifies the multiplier for the processor count in each iteration.')
 
 benchmark_parser.add_argument('-d', '--datasets', type=str, nargs='+',
-                              help='Dataset names (matrix market files must be located in ./mmdests folder)')
+                              help='The names of the datasets. Corresponding matrix market files should be located in '
+                                   'the ./mmdests folder.')
 
-# Existing code
 args = parser.parse_args()
 
 dec_order = True
@@ -67,6 +85,10 @@ if args.noconstructive:
     args.volumemode += 2
 if args.mode == 'benchmark' and args.datasets is None:
     raise Exception("At least one dataset must be specified")
+if args.mode == 'run' and args.dataset_name is None:
+    raise Exception("Dataset name must be specified")
+if args.noiterative and args.itercvthreshold is not None:
+    raise Exception("itercvthreshold cannot be used without iterative algorithm")
 print(args)
 
 
@@ -116,15 +138,25 @@ def execute(core_cnt, ignore_benchmark):
         constructive_algorithm(opt_send_list, send_list, t, degree_list)
 
     if not args.noiterative:
-        iterative_improvement(opt_send_list, send_list, t, degree_list)
+        if args.itermax > 1:
+            big_number = 100000  # some big number
+            cv_threshold = args.itercvthreshold if args.itercvthreshold is not None else big_number
+            iter_idx = 0
+            cv = big_number + 1
+            while iter_idx < args.itermax and cv > cv_threshold:
+                iterative_improvement(opt_send_list, send_list, t, degree_list)
+                opt_vols = [x.volume() for x in opt_send_list]
+                cv = util.cv(opt_vols)
+                iter_idx += 1
+        else:
+            iterative_improvement(opt_send_list, send_list, t, degree_list)
 
     end_time = time.perf_counter()
     execution_time = end_time - start_time
     p_execution_time = end_time - parse_start_time
 
     # communication partition
-
-    two_phase_delay = partition_phases(opt_send_list, core_cnt, name, args.part_method)
+    two_phase_delay = partition_phases(opt_send_list, core_cnt, name, util.PartitionType(args.part_method))
     if args.onephase:
         partition_one_phase(send_list, core_cnt, name)
 

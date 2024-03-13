@@ -45,10 +45,14 @@ def get_coo_mat(dataset_name):
         data = dataset[0]
         coo_data = data.edge_index.numpy()
         vtx_count = data.num_nodes
-        # create the matrix market file from coo_data
-        mmfpath = f"out/{dataset_name}.mtx"
+        # write the matrix market file from coo_data
+        mmfpath = f"mmdsets/{dataset_name}.mtx"
         if not os.path.exists(mmfpath):
-            mmwrite(mmfpath, coo_data)
+            with open(mmfpath, "w") as f:
+                f.write(f"%%MatrixMarket matrix coordinate real general\n")
+                f.write(f"{vtx_count} {vtx_count} {len(coo_data[0])}\n")
+                for i in range(len(coo_data[0])):
+                    f.write(f"{coo_data[0][i] + 1} {coo_data[1][i] + 1} 1\n")
 
     adj = [[] for _ in range(vtx_count)]
     wg = np.zeros(dtype=int, shape=vtx_count)

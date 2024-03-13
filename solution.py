@@ -44,6 +44,9 @@ group.add_argument("--part_method", type=int,
                    help="Determines the partition method. 1 for filling by lowest volume, 2 for subset-sum. Default "
                         "is 1.",
                    default=1, choices=range(1, 3))
+group.add_argument("--node_core_count", type=int, metavar="N",
+                   help="Specify the number of cores in a node. Default is 1. Assumes that the cores are sequential.",
+                   default=1)
 
 run_parser = subparsers.add_parser('run', help='Runs the algorithm on a specified dataset', parents=[group],
                                    epilog=epilog_text)
@@ -89,11 +92,18 @@ if args.mode == 'run' and args.dataset_name is None:
     raise Exception("Dataset name must be specified")
 if args.noiterative and args.itercvthreshold is not None:
     raise Exception("itercvthreshold cannot be used without iterative algorithm")
+if args.node_core_count < 1:
+    raise Exception("Node core count must be at least 1")
+if args.node_core_count >= args.core_cnt:
+    # setting node_core_count to 1 since it's meaningless for this case
+    args.node_core_count = 1
 print(args)
 
 
 def get_core_iterator():
-    if args.exp is None:
+    if args.loop is None:
+        return [args.core_cnt]
+    elif args.exp is None:
         return range(args.core_cnt, args.loop, args.interval)
     else:
         ratio = math.log(args.loop / args.core_cnt, args.exp)
@@ -147,6 +157,7 @@ def execute(core_cnt, ignore_benchmark):
                 iterative_improvement(opt_send_list, send_list, t, degree_list)
                 opt_vols = [x.volume() for x in opt_send_list]
                 cv = util.cv(opt_vols)
+                print(f"{name}-{core_cnt}: {iter_idx + 1}. iteration, cv: {cv}")
                 iter_idx += 1
         else:
             iterative_improvement(opt_send_list, send_list, t, degree_list)
@@ -187,7 +198,6 @@ def execute(core_cnt, ignore_benchmark):
                              np.min(opt_vols),
                              degree_len, degree_sum / degree_len, degree_sum, e_degrees[-1], e_degrees[0],
                              util.cv(e_degrees),
-                             np.sum(e_degrees[degree_len - twenty_perc - 1:]) / degree_sum,
                              # t.non_reassignment_vol / t.reassign_cnt
                              ]
             execution_res = np.around(execution_res, 2)
@@ -195,7 +205,6 @@ def execute(core_cnt, ignore_benchmark):
 
         degree_sum = np.sum(e_degrees)
         degree_len = len(e_degrees)
-        twenty_perc = int(math.floor(0.1 * degree_len))
         return extract_results()
     # return nothing if benchmark mode is not enabled
 

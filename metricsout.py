@@ -88,30 +88,23 @@ def create_excel(args, data, datasets):
     DEFAULT_FONT.sz = 10
     # _font = Font(sz=10)
     # {k: setattr(DEFAULT_FONT, k, v) for k, v in _font.__dict__.items()}
-    ws.merge_cells(start_row=1, start_column=1, end_row=2, end_column=1)
     ws["A1"] = "Dataset"
     interval = len(data) / len(datasets)
 
-    ws.merge_cells(start_row=1, start_column=2, end_row=2, end_column=2)
     ws["B1"] = "Vertex\nCnt"
-    ws.merge_cells(start_row=1, start_column=3, end_row=2, end_column=3)
     ws["C1"] = "Edge\nCnt"
-    ws.merge_cells(start_row=1, start_column=4, end_row=1, end_column=5)
     ws["D1"] = "Time (s)"
     ws["D2"] = "Algo"
     ws["E2"] = "Total"
-    ws.merge_cells(start_row=1, start_column=6, end_row=2, end_column=6)
     ws["F1"] = "Cores"
-    ws.merge_cells(start_row=1, start_column=7, end_row=1, end_column=9)
     ws["G1"] = "Reassignment"
     ws["G2"] = "Cnt"
     ws["H2"] = "Non-R. Cnt"
     ws["I2"] = "Vol"
-    ws.merge_cells(start_row=1, start_column=10, end_row=1, end_column=11)
+    # now ws worksheet data:
     ws["J1"] = "Improvement(%)"
     ws["J2"] = "Delay"
     ws["K2"] = "Max"
-    ws.merge_cells(start_row=1, start_column=12, end_row=1, end_column=18)
     ws["L1"] = "Vol"
     ws["L2"] = "Avg"
     ws["M2"] = "I CV"
@@ -120,7 +113,6 @@ def create_excel(args, data, datasets):
     ws["P2"] = "O Max"
     ws["Q2"] = "I Min"
     ws["R2"] = "O Min"
-    ws.merge_cells(start_row=1, start_column=19, end_row=1, end_column=25)
     ws["S1"] = "Degree"
     ws["S2"] = "Cnt"
     ws["T2"] = "Avg"
@@ -128,11 +120,6 @@ def create_excel(args, data, datasets):
     ws["V2"] = "Max"
     ws["W2"] = "Min"
     ws["X2"] = "CV"
-    ws["Y2"] = "High %10"
-    # ws.merge_cells(start_row=1, start_column=26, end_row=2, end_column=26)
-    # ws["Y1"] = "Avg\nFwd Vol"
-
-    # ws["X2"] = "Low %20 Perc."
 
     for i in range(len(data)):
         d = data[i]
@@ -140,14 +127,33 @@ def create_excel(args, data, datasets):
         row_idx = i + 3
         for j in range(len(d)):
             if j == 9:
-                ws.cell(row=row_idx, column=j + increment, value=f"=ROUND(100*(O{row_idx}-P{row_idx})/P{row_idx}, 3)")
+                ws.cell(row=row_idx, column=j + increment, value=f"=ROUND(100*(H{row_idx}-I{row_idx})/I{row_idx}, 3)")
                 increment += 1
             ws.cell(row=row_idx, column=j + increment, value=d[j])
-    adjust_column_width_from_col(ws, 2, 1, ws.max_column)
-    adjust_column_width_from_col(ws, 1, 1, 1)
-
     double = borders.Side(border_style="thin")
 
+    # Get the range of cells to copy
+    cells_to_copy = ws["A:I"]
+
+    # Iterate over each row in the range
+    for row in cells_to_copy:
+        # Iterate over each cell in the row
+        for cell in row:
+            # Create a new cell in the second worksheet with the same value as the original cell
+            ws1[cell.coordinate] = cell.value
+    ws.merge_cells(start_row=1, start_column=1, end_row=2, end_column=1)
+    ws.merge_cells(start_row=1, start_column=2, end_row=2, end_column=2)
+    ws.merge_cells(start_row=1, start_column=3, end_row=1, end_column=4)
+    ws.merge_cells(start_row=1, start_column=5, end_row=1, end_column=11)
+    ws.merge_cells(start_row=1, start_column=12, end_row=1, end_column=17)
+    ws1.merge_cells(start_row=1, start_column=2, end_row=2, end_column=2)
+    ws1.merge_cells(start_row=1, start_column=3, end_row=2, end_column=3)
+    ws1.merge_cells(start_row=1, start_column=4, end_row=1, end_column=5)
+    ws1.merge_cells(start_row=1, start_column=6, end_row=2, end_column=6)
+    ws1.merge_cells(start_row=1, start_column=7, end_row=1, end_column=9)
+    # Now remove B-I from ws except F
+    ws.delete_cols(2, 4)
+    ws.delete_cols(3, 3)
     for i in range(ws.max_column):
         ws[openpyxl.utils.cell.get_column_letter(i + 1) + str(1)].alignment = openpyxl.styles.Alignment(
             horizontal="center")
@@ -157,15 +163,20 @@ def create_excel(args, data, datasets):
                 horizontal="right", vertical="center")
             if j % interval == 1:
                 cell.border = Border(bottom=double)
+        adjust_column_width_from_col(ws, 2, 1, ws.max_column)
+        adjust_column_width_from_col(ws, 1, 1, 1)
 
     # for j in range(1, ws.max_row + 1):
     #     end_cell = ws.cell(row=j, column=ws.max_column)
     #     end_cell.border = Border(right=double, bottom=double)
     # row = ws.row_dimensions[2]
-    for i in range(len(datasets)):
-        d = datasets[i]
-        ws.merge_cells(start_row=interval * i + 3, start_column=1, end_row=interval * (i + 1) + 2, end_column=1)
-        cell = ws.cell(row=interval * i + 3, column=1, value=d)
-        cell.border = Border(right=double)
+    for worksheet in [ws, ws1]:
+        for i in range(len(datasets)):
+            d = datasets[i]
+            worksheet.merge_cells(start_row=interval * i + 3, start_column=1, end_row=interval * (i + 1) + 2,
+                                  end_column=1)
+            cell = worksheet.cell(row=interval * i + 3, column=1, value=d)
+            cell.border = Border(right=double)
 
+    # Save the workbook
     wb.save(f'out/{args.core_cnt}cores-{args.volumemode}-{get_algorithm_name(args)}.xlsx')

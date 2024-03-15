@@ -170,9 +170,9 @@ def execute(core_cnt, ignore_benchmark):
 
     # communication partition
     two_phase_delay = partition_phases(opt_send_list, core_cnt, name, util.PartitionType(args.part_method),
-                                       args.node_core_count, vol_df)
+                                       args.node_core_count)
     if args.onephase:
-        partition_one_phase(send_list, core_cnt, name, args.node_core_count, vol_df)
+        partition_one_phase(send_list, core_cnt, name, args.node_core_count)
 
     # write partitions as file
     write_partitions(mappings, core_cnt, name)
@@ -286,7 +286,7 @@ def assign(core_dest_data: DestData, vtx: int, send_set: set, opt_send_list: lis
         reserved_cores = set()
         temp_send_set = send_set
         # if they're in the same node, no need for reservation
-        if args.node_core_count > 9999 and not (range_st <= other_idx < range_end):
+        if args.node_core_count > 1 and not (range_st <= other_idx < range_end):
             reserved_cores = set([core for core in send_set if range_st <= core < range_end])
             temp_send_set = send_set - reserved_cores
         # get cost

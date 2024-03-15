@@ -5,6 +5,7 @@ from typing import Sized
 import numpy as np
 
 import partition
+import util
 from util import DestData, PartitionType
 
 
@@ -61,7 +62,8 @@ def update_start_positions(file, processor_start_positions):
 
 
 # writes phase partitions to binary file
-def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, partition_type: PartitionType):
+def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, partition_type: PartitionType,
+                     node_core_cnt: int, vol_df: dict[str, list]):
     tr_vols, phase1_vols = partition.get_p1_threshold(opt_send_list)
     tr_max = np.max(tr_vols)
     phase1_min = np.min(phase1_vols)
@@ -102,11 +104,24 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
         print("BUG: send and recv volumes are not equal")
         exit(1)
     # difference between lowest and highest volume
-    p1_vols = [send_vols[0][i] + recv_vols[0][i] for i in range(core_cnt)]
-    min_vol = np.min(p1_vols)
-    max_vol = np.max(p1_vols)
-    print(
-        f"Partition of the sample {name}, {core_cnt}: min: {min_vol}, max: {max_vol}, delay: {delay}, threshold: {phase1_vol}")
+    # p1_vols = [send_vols[0][i] + recv_vols[0][i] for i in range(core_cnt)]
+    # min_vol = np.min(p1_vols)
+    # max_vol = np.max(p1_vols)
+    # print(
+    #     f"Partition of the sample {name}, {core_cnt}: min: {min_vol}, max: {max_vol}, delay: {delay}, threshold: {phase1_vol}")
+
+    # print out of node send & recv volumes
+    smax, smin, savg = get_out_of_node_vol_info(send_lists, core_cnt, node_core_cnt)
+    rmax, rmin, ravg = get_out_of_node_vol_info(recv_lists, core_cnt, node_core_cnt)
+
+    total_send_vols = [send_vols[0][i] + send_vols[1][i] for i in range(core_cnt)]
+    total_recv_vols = [recv_vols[0][i] + recv_vols[1][i] for i in range(core_cnt)]
+    total_send_vols = [sum(total_send_vols[i:i + node_core_cnt]) for i in range(0, len(total_send_vols), node_core_cnt)]
+    total_recv_vols = [sum(total_recv_vols[i:i + node_core_cnt]) for i in range(0, len(total_recv_vols), node_core_cnt)]
+    tsmax, tsmin, tsavg = np.max(total_send_vols), np.min(total_send_vols), np.mean(total_send_vols)
+    trmax, trmin, travg = np.max(total_recv_vols), np.min(total_recv_vols), np.mean(total_recv_vols)
+
+    vol_df[f"{name}-2phs"] = [smax, smin, savg, tsmax, tsmin, tsavg, rmax, rmin, ravg, trmax, trmin, travg]
     # Create and open the binary file with placeholder values
     fname = f"out/{name}.phases.{core_cnt}.bin"
     with open(fname, 'w+b') as file:
@@ -137,7 +152,7 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
     return delay
 
 
-def partition_one_phase(send_list: list[dict[set]], core_cnt: int, name: str):
+def partition_one_phase(send_list: list[dict[set]], core_cnt: int, name: str, node_core_cnt, vol_df: dict[str, list]):
     recv_lists = [dict() for _ in range(core_cnt)]
     send_lists = [dict() for _ in range(core_cnt)]
     # fill the send & recv lists where the keys are processors and values are vertexes
@@ -154,6 +169,14 @@ def partition_one_phase(send_list: list[dict[set]], core_cnt: int, name: str):
     # get their volumes
     send_vols = [sum(len(v) for v in send_lists[i].values()) for i in range(core_cnt)]
     recv_vols = [sum(len(v) for v in recv_lists[i].values()) for i in range(core_cnt)]
+    # print out of node send & recv volumes
+    smax, smin, savg = get_out_of_node_vol_info_one_phs(send_lists, core_cnt, node_core_cnt)
+    rmax, rmin, ravg = get_out_of_node_vol_info_one_phs(recv_lists, core_cnt, node_core_cnt)
+    group_send_vols = [sum(send_vols[i:i + node_core_cnt]) for i in range(0, len(send_vols), node_core_cnt)]
+    group_recv_vols = [sum(recv_vols[i:i + node_core_cnt]) for i in range(0, len(recv_vols), node_core_cnt)]
+    tsmax, tsmin, tsavg = np.max(group_send_vols), np.min(group_send_vols), np.mean(group_send_vols)
+    trmax, trmin, travg = np.max(group_recv_vols), np.min(group_recv_vols), np.mean(group_recv_vols)
+    vol_df[f"{name}-1phs"] = [smax, smin, savg, tsmax, tsmin, tsavg, rmax, rmin, ravg, trmax, trmin, travg]
     # write to binary file
     fname = f"out/{name}.phases.{core_cnt}.one.bin"
     with open(fname, 'w+b') as file:
@@ -181,3 +204,35 @@ def write_partitions(mappings: list, core_cnt: int, name: str):
     with open(fname, 'w') as file:
         for m in mappings:
             file.write(f"{m}\n")
+
+
+def get_out_of_node_vol_info(lists, core_cnt, node_core_cnt):
+    out_node_vols = [0 for _ in range(core_cnt)]
+    for i in range(core_cnt):
+        sl = lists[i]
+        range_st, range_end = util.get_node_range(i, core_cnt, node_core_cnt)
+        dsum = 0
+        for k in range(2):
+            for j in range(range_st, range_end):
+                if j in sl[k]:
+                    dsum += len(sl[k][j])
+        out_node_vols[i] = dsum
+    # sum each node core_cnt elements
+    out_node_vols = [sum(out_node_vols[i:i + node_core_cnt]) for i in range(0, len(out_node_vols), node_core_cnt)]
+    return np.max(out_node_vols), np.min(out_node_vols), np.mean(out_node_vols)
+
+
+def get_out_of_node_vol_info_one_phs(lists, core_cnt, node_core_cnt):
+    out_node_vols = [0 for _ in range(core_cnt)]
+    for i in range(core_cnt):
+        sl = lists[i]
+        range_st, range_end = util.get_node_range(i, core_cnt, node_core_cnt)
+        dsum = 0
+        for j in range(range_st, range_end):
+            if j in sl:
+                dsum += len(sl[j])
+        out_node_vols[i] = dsum
+    # sum each node_core_cnt elements
+    out_node_vols = [sum(out_node_vols[i:i + node_core_cnt]) for i in range(0, len(out_node_vols), node_core_cnt)]
+    # out_node_vols = [out_node_vols[i:i + node_core_cnt] for i in range(0, len(out_node_vols), node_core_cnt)]
+    return np.max(out_node_vols), np.min(out_node_vols), np.mean(out_node_vols)

@@ -328,3 +328,12 @@ def get_sorted_degree_list(send_list: list[dict[int, set]], reverse=True):
                 i += increment
                 return [*e_degrees[i:], *e_degrees[0:i]]
     return e_degrees
+
+
+def get_node_range(core_idx: int, core_cnt: int, node_core_cnt):
+    idx = np.floor(core_idx / node_core_cnt)
+    start = idx * node_core_cnt
+    end = start + node_core_cnt
+    if end > core_cnt:
+        end = core_cnt - 1
+    return int(start), int(end)

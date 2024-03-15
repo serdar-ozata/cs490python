@@ -3,6 +3,8 @@ import random
 import time
 import numpy as np
 import pymetis
+
+import metricsout
 import util
 import argparse
 from tqdm import tqdm
@@ -167,9 +169,10 @@ def execute(core_cnt, ignore_benchmark):
     p_execution_time = end_time - parse_start_time
 
     # communication partition
-    two_phase_delay = partition_phases(opt_send_list, core_cnt, name, util.PartitionType(args.part_method))
+    two_phase_delay = partition_phases(opt_send_list, core_cnt, name, util.PartitionType(args.part_method),
+                                       args.node_core_count, vol_df)
     if args.onephase:
-        partition_one_phase(send_list, core_cnt, name)
+        partition_one_phase(send_list, core_cnt, name, args.node_core_count, vol_df)
 
     # write partitions as file
     write_partitions(mappings, core_cnt, name)
@@ -274,37 +277,43 @@ def assign(core_dest_data: DestData, vtx: int, send_set: set, opt_send_list: lis
     best_del_cost = core_dest_data.delta_sqr(vtx, send_set)
     best_assignment_type = Assigment.NO_REASSIGNMENT
     expand_core = -1  # means self
+    best_reserved_cores = set()
     if len(send_set) >= MIN_REASSIGN_LIMIT:
-        # square_sum_cost
-        #     for other_idx in send_set:
-        #         other_dest_data = opt_send_list[other_idx]
-        #         delta_cost, assignment_type = util.assignment_cost(other_dest_data, core_dest_data, h, send_set)
-        #         if delta_cost < best_del_cost:
-        #             best_assignment_type = assignment_type
-        #             best_del_cost = delta_cost
-        #             expand_core = other_idx
-        # lowest vol cost
         other_idx = min(send_set, key=lambda i: opt_send_list[i].volume())
         other_dest_data = opt_send_list[other_idx]
-        delta_cost, assignment_type = util.assignment_cost(other_dest_data, core_dest_data, vtx, send_set)
+        # check how many of the vertices within the node of the sender
+        range_st, range_end = util.get_node_range(core_dest_data.id, args.node_core_count, len(opt_send_list))
+        reserved_cores = set()
+        temp_send_set = send_set
+        # if they're in the same node, no need for reservation
+        if args.node_core_count > 9999 and not (range_st <= other_idx < range_end):
+            reserved_cores = set([core for core in send_set if range_st <= core < range_end])
+            temp_send_set = send_set - reserved_cores
+        # get cost
+        delta_cost, assignment_type = util.assignment_cost(other_dest_data, core_dest_data, vtx, temp_send_set)
         if delta_cost < best_del_cost:
             best_assignment_type = assignment_type
             best_del_cost = delta_cost
             expand_core = other_idx
+            best_reserved_cores = reserved_cores
     t.cost += best_del_cost
+    best_send_set = send_set - best_reserved_cores
     match best_assignment_type:
         case Assigment.NO_REASSIGNMENT:
             core_dest_data.remove_forwarded_core(vtx)
             t.set(best_assignment_type, len(send_set))
-            core_dest_data.insert(vtx, send_set)
+            core_dest_data.insert(vtx, best_send_set)
         case Assigment.N_MINUS_1_TO_1:
-            t.set(best_assignment_type, len(send_set))
-            apply_n_minus_1_to_1_split(core_dest_data, vtx, send_set, expand_core, opt_send_list)
+            t.set(best_assignment_type, len(best_send_set))
+            apply_n_minus_1_to_1_split(core_dest_data, vtx, best_send_set, expand_core, opt_send_list)
         case Assigment.VOL_EQ_SPLIT:
-            other_vol, core_vol = apply_vol_equalizing_split(opt_send_list, expand_core, core_dest_data, vtx, send_set)
+            other_vol, core_vol = apply_vol_equalizing_split(opt_send_list, expand_core, core_dest_data, vtx,
+                                                             best_send_set)
             t.set_vol_eq_split(other_vol, core_vol)
+    core_dest_data.insert(vtx, best_reserved_cores)
 
 
+vol_df = dict()
 # Check the mode of operation and call the appropriate function
 if args.mode == 'run':
     name = args.dataset_name
@@ -314,7 +323,7 @@ elif args.mode == 'benchmark':
     if len(args.datasets) == 1 and args.loop is None and args.exp is None:
         name = args.datasets[0]
         coo_data, vtx_count, adj_mat, wg = util.get_coo_mat(name)
-        r = execute(args.core_cnt)
+        r = execute(args.core_cnt, ignore_benchmark=False)
     else:
         results = []
         for name in tqdm(args.datasets):
@@ -327,4 +336,6 @@ elif args.mode == 'benchmark':
                 results.append(r)
             del adj_mat
         create_excel(args, results, args.datasets)
+metricsout.print_vol_excel(vol_df, args.node_core_count, args.core_cnt)
+
 # else part is unreachable

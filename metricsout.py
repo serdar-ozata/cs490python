@@ -179,4 +179,48 @@ def create_excel(args, data, datasets):
             cell.border = Border(right=double)
 
     # Save the workbook
-    wb.save(f'out/{args.core_cnt}cores-{args.volumemode}-{get_algorithm_name(args)}.xlsx')
+    wb.save(f'out/{args.core_cnt}cores-{args.volumemode}-{get_algorithm_name(args)}-node{args.node_core_count}.xlsx')
+
+
+def print_vol_excel(vol_df: dict[str, list[int]], node_core_cnt, core_cnt) -> None:
+    wb = Workbook()
+    ws = wb.active
+    ws.merge_cells(start_row=1, start_column=1, end_row=2, end_column=1)
+    ws["A1"] = "Dataset"
+    ws.merge_cells(start_row=1, start_column=2, end_row=1, end_column=4)
+    ws["B1"] = "Out of Node Vol Send"
+    ws["B2"] = "Max"
+    ws["C2"] = "Min"
+    ws["D2"] = "Avg"
+    ws.merge_cells(start_row=1, start_column=5, end_row=1, end_column=7)
+    ws["E1"] = "Total Vol Send"
+    ws["E2"] = "Max"
+    ws["F2"] = "Min"
+    ws["G2"] = "Avg"
+    ws.merge_cells(start_row=1, start_column=8, end_row=1, end_column=10)
+    ws["H1"] = "Out of Node Vol Recv"
+    ws["H2"] = "Max"
+    ws["I2"] = "Min"
+    ws["J2"] = "Avg"
+    ws.merge_cells(start_row=1, start_column=11, end_row=1, end_column=13)
+    ws["K1"] = "Total Vol Recv"
+    ws["K2"] = "Max"
+    ws["L2"] = "Min"
+    ws["M2"] = "Avg"
+    i = 3
+    for name, vlist in vol_df.items():
+        ws.cell(row=i, column=1, value=name)
+        for j, v in enumerate(vlist):
+            ws.cell(row=i, column=2 + j, value=v)
+        i += 1
+
+    for i in range(ws.max_column):
+        ws[openpyxl.utils.cell.get_column_letter(i + 1) + str(1)].alignment = openpyxl.styles.Alignment(
+            horizontal="center")
+        for j in range(1, ws.max_row):
+            cell = ws[openpyxl.utils.cell.get_column_letter(i + 1) + str(j + 1)]
+            cell.alignment = openpyxl.styles.Alignment(
+                horizontal="right", vertical="center")
+    adjust_column_width_from_col(ws, 2, 1, ws.max_column)
+    adjust_column_width_from_col(ws, 1, 1, 1)
+    wb.save(f'out/vol-{len(vol_df)}-{core_cnt}-{node_core_cnt}.xlsx')

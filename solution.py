@@ -277,27 +277,34 @@ def assign(core_dest_data: DestData, vtx: int, send_set: set, opt_send_list: lis
     best_del_cost = core_dest_data.delta_sqr(vtx, send_set)
     best_assignment_type = Assigment.NO_REASSIGNMENT
     expand_core = -1  # means self
-    best_reserved_cores = set()
+    best_owner_reserves = set()
+    best_other_reserves = set()
     if len(send_set) >= MIN_REASSIGN_LIMIT:
         other_idx = min(send_set, key=lambda i: opt_send_list[i].volume())
         other_dest_data = opt_send_list[other_idx]
         # check how many of the vertices within the node of the sender
         range_st, range_end = util.get_node_range(core_dest_data.id, args.node_core_count, len(opt_send_list))
-        reserved_cores = set()
+        owner_reserves = set()
+        other_reserves = set()
         temp_send_set = send_set
         # if they're in the same node, no need for reservation
         if args.node_core_count > 1 and not (range_st <= other_idx < range_end):
-            reserved_cores = set([core for core in send_set if range_st <= core < range_end])
-            temp_send_set = send_set - reserved_cores
+            owner_reserves = set([core for core in send_set if range_st <= core < range_end])  # reserve for the owner
+            temp_send_set = send_set - owner_reserves
+            other_st, other_end = util.get_node_range(other_idx, args.node_core_count, len(opt_send_list))
+            other_reserves = set([core for core in temp_send_set if other_st <= core < other_end])
+            temp_send_set = temp_send_set - other_reserves
         # get cost
-        delta_cost, assignment_type = util.assignment_cost(other_dest_data, core_dest_data, vtx, temp_send_set)
+        delta_cost, assignment_type = util.assignment_cost(other_dest_data, core_dest_data, vtx,
+                                                           temp_send_set)  # reserve for the other
         if delta_cost < best_del_cost:
             best_assignment_type = assignment_type
             best_del_cost = delta_cost
             expand_core = other_idx
-            best_reserved_cores = reserved_cores
+            best_owner_reserves = owner_reserves
+            best_other_reserves = other_reserves
     t.cost += best_del_cost
-    best_send_set = send_set - best_reserved_cores
+    best_send_set = send_set - best_owner_reserves - best_other_reserves
     match best_assignment_type:
         case Assigment.NO_REASSIGNMENT:
             core_dest_data.remove_forwarded_core(vtx)
@@ -306,14 +313,15 @@ def assign(core_dest_data: DestData, vtx: int, send_set: set, opt_send_list: lis
         case Assigment.N_MINUS_1_TO_1:
             t.set(best_assignment_type, len(best_send_set))
             apply_n_minus_1_to_1_split(core_dest_data, vtx, best_send_set, expand_core, opt_send_list)
+            opt_send_list[expand_core].insert(vtx, best_other_reserves)
         case Assigment.VOL_EQ_SPLIT:
             other_vol, core_vol = apply_vol_equalizing_split(opt_send_list, expand_core, core_dest_data, vtx,
                                                              best_send_set)
             t.set_vol_eq_split(other_vol, core_vol)
-    core_dest_data.insert(vtx, best_reserved_cores)
+            opt_send_list[expand_core].insert(vtx, best_other_reserves)
+    core_dest_data.insert(vtx, best_owner_reserves)
 
 
-vol_df = dict()
 # Check the mode of operation and call the appropriate function
 if args.mode == 'run':
     name = args.dataset_name
@@ -324,6 +332,7 @@ elif args.mode == 'benchmark':
         name = args.datasets[0]
         coo_data, vtx_count, adj_mat, wg = util.get_coo_mat(name)
         r = execute(args.core_cnt, ignore_benchmark=False)
+        create_excel(args, [r], args.datasets)
     else:
         results = []
         for name in tqdm(args.datasets):
@@ -336,6 +345,4 @@ elif args.mode == 'benchmark':
                 results.append(r)
             del adj_mat
         create_excel(args, results, args.datasets)
-metricsout.print_vol_excel(vol_df, args.node_core_count, args.core_cnt)
-
 # else part is unreachable

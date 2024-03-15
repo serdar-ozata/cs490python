@@ -133,7 +133,6 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
             vertexes = list(chain(chain(*send_lists[i][0].values()), chain(*recv_lists[i][0].values()),
                                   chain(*send_lists[i][1].values()), chain(*recv_lists[i][1].values())))
             write_bin_file(file, vertexes)
-
         # write proc ptrs
         update_start_positions(file, proc_ptrs)
 

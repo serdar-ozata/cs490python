@@ -167,13 +167,11 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
             write_ranges(file, send_lists[i][1], core_cnt)
             write_ranges(file, recv_lists[i][1], core_cnt)
             # convert to list
-            # vertexes = []
-            # for p in range(2):
-            #     for l in range(core_cnt):
-            #         vertexes.extend(send_lists[i][p][l] if l in send_lists[i][p] else [])
-            vertexes = [val for p in range(2) for l in range(core_cnt) for val in
-                        (send_lists[i][p][l] if l in send_lists[i][p] else [])]
-            print(len(vertexes))
+            vertexes = []
+            for p in range(2):
+                for l in range(core_cnt):
+                    vertexes.extend(send_lists[i][p][l] if l in send_lists[i][p] else [])
+                    vertexes.extend(recv_lists[i][p][l] if l in recv_lists[i][p] else [])
             write_bin_file(file, vertexes)
         # write proc ptrs
         update_start_positions(file, proc_ptrs)
@@ -211,8 +209,8 @@ def partition_one_phase(send_list: list[dict[set]], core_cnt: int, name: str, no
             write_ranges(file, send_lists[i], core_cnt)
             write_ranges(file, recv_lists[i], core_cnt)
             # write send and recv vertexes
-            vertexes = list(chain(*send_lists[i].values(), *recv_lists[i].values()))
-
+            vertexes = [val for list in (send_lists, recv_lists) for l in range(core_cnt) for val in
+                        (list[i][l] if l in list[i] else [])]
             write_bin_file(file, vertexes)
 
         # write proc ptrs

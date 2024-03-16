@@ -170,7 +170,7 @@ def execute(core_cnt, ignore_benchmark):
 
     # communication partition
     two_phase_delay = partition_phases(opt_send_list, core_cnt, name, util.PartitionType(args.part_method),
-                                       args.node_core_count)
+                                       send_list)
     if args.onephase:
         partition_one_phase(send_list, core_cnt, name, args.node_core_count)
 
@@ -193,7 +193,6 @@ def execute(core_cnt, ignore_benchmark):
             # 12: I highest volume, 13: highest volume, 14: I min vol, 15: min vol
             # 16: expand task count, 17: expand degree avg, 18: expand degree sum
             # 19: max expand degree, 20: min expand degree, 21: avg ed, 22: cv ed, 23: highest 10% / total
-            # 22: sender's avg expand task size after reassignment
 
             execution_res = [vtx_count, len(coo_data[0]), execution_time, p_execution_time, core_cnt, t.reassign_cnt,
                              t.non_reassign_cnt, t.reassign_vol, two_phase_delay,  # 8

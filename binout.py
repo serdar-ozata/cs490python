@@ -9,14 +9,14 @@ import util
 from util import DestData, PartitionType
 
 
-def assign_comm_list(dest_data: DestData, comm_list: list[(dict[list], dict[list])], send: bool, p1_selection: set):
+def assign_comm_list(dest_data: DestData, comm_list: list[(dict, dict)], send: bool, p1_selection: set):
     sender_idx = dest_data.id
-    for vtx, v in dest_data.expands.items():
+    for vtx, prcs in dest_data.expands.items():
         if vtx in p1_selection:
             dict_idx = 0
         else:
             dict_idx = 1
-        for rec_idx in v:
+        for rec_idx in prcs:
             main_idx = sender_idx if send else rec_idx
             other_idx = rec_idx if send else sender_idx
             if other_idx not in comm_list[main_idx][dict_idx]:
@@ -63,7 +63,7 @@ def update_start_positions(file, processor_start_positions):
 
 # writes phase partitions to binary file
 def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, partition_type: PartitionType,
-                     send_list: list[dict[set]]):
+                     alpha: float):
     tr_vols, phase1_vols = partition.get_p1_threshold(opt_send_list)
     tr_max = np.max(tr_vols)
     phase1_min = np.min(phase1_vols)
@@ -87,8 +87,8 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
         raise Exception("Unknown partition type")
 
     # get recv & send lists (phase1, phase2)
-    recv_lists: list[(dict[list], dict[list])] = [(dict(), dict()) for _ in range(core_cnt)]
-    send_lists: list[(dict[list], dict[list])] = [(dict(), dict()) for _ in range(core_cnt)]
+    recv_lists: list[(dict, dict)] = [(dict(), dict()) for _ in range(core_cnt)]
+    send_lists: list[(dict, dict)] = [(dict(), dict()) for _ in range(core_cnt)]
     for i in range(core_cnt):
         dest_data = opt_send_list[i]
         # get phase1 OETs and TRs
@@ -103,52 +103,9 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
     if np.sum(send_vols[0]) != np.sum(recv_vols[0]) or np.sum(send_vols[1]) != np.sum(recv_vols[1]):
         print("BUG: send and recv volumes are not equal")
         exit(1)
-    # difference between lowest and highest volume
-    # p1_vols = [send_vols[0][i] + recv_vols[0][i] for i in range(core_cnt)]
-    # min_vol = np.min(p1_vols)
-    # max_vol = np.max(p1_vols)
-    # print(
-    #     f"Partition of the sample {name}, {core_cnt}: min: {min_vol}, max: {max_vol}, delay: {delay}, threshold: {phase1_vol}")
-    # check send and recv lists
-    # one_send_lists = [dict() for _ in range(core_cnt)]
-    # one_recv_lists = [dict() for _ in range(core_cnt)]
-    # # fill the send & recv lists where the keys are processors and values are vertexes
-    # for send_idx in range(core_cnt):
-    #     for vtx, rec_idxs in send_list[send_idx].items():
-    #         for rec_idx in rec_idxs:
-    #             if send_idx not in one_recv_lists[rec_idx]:
-    #                 one_recv_lists[rec_idx][send_idx] = []
-    #             one_recv_lists[rec_idx][send_idx].append(vtx)
-    #             if rec_idx not in one_send_lists[send_idx]:
-    #                 one_send_lists[send_idx][rec_idx] = []
-    #             one_send_lists[send_idx][rec_idx].append(vtx)
-    # # check 2 phase versions
-    # prc_recv_vrtxs_2p = [[] for _ in range(core_cnt)]
-    # prc_recv_vrtxs_1p = [[] for _ in range(core_cnt)]
-    # for i in range(core_cnt):
-    #     for prc, vlist in one_recv_lists[i].items():
-    #         prc_recv_vrtxs_1p[i].extend(vlist)
-    #     for k in range(2):
-    #         for prc, vlist in recv_lists[i][k].items():
-    #             prc_recv_vrtxs_2p[i].extend(vlist)
-    # check if they are equal
-    # for i in range(core_cnt):
-    #     if set(prc_recv_vrtxs_1p[i]) != set(prc_recv_vrtxs_2p[i]):
-    #         print("BUG: 1p and 2p recv lists are not equal")
-    #         print(prc_recv_vrtxs_1p[i])
-    #         print("--------------------------------")
-    #         print(prc_recv_vrtxs_2p[i])
-    #         exit(1)
-    # # check whether reassigned cores are taking their vertexes in phs 1
-    # for i in range(core_cnt):
-    #     for k, v in opt_send_list[i].reassign_cores.items():
-    #         if k not in recv_lists[v][0][i]:
-    #             print("BUG: reassigned core is not taking its vertex in phs 1")
-    #             exit(1)
-    #
-    # return delay  # returning early due to a test
     # Create and open the binary file with placeholder values
-    fname = f"out/{name}.phases.{core_cnt}.bin"
+    alpha_str = str(alpha).replace(".", "")  # remove the dot
+    fname = f"out/{name}.phases.{alpha_str}.{core_cnt}.bin"
     with open(fname, 'w+b') as file:
         init_bin_file(file, core_cnt)
         proc_ptrs = []
@@ -171,6 +128,7 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
             for p in range(2):
                 for l in range(core_cnt):
                     vertexes.extend(sorted(send_lists[i][p][l]) if l in send_lists[i][p] else [])
+                for l in range(core_cnt):
                     vertexes.extend(sorted(recv_lists[i][p][l]) if l in recv_lists[i][p] else [])
             write_bin_file(file, vertexes)
         # write proc ptrs
@@ -179,19 +137,8 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
     return delay
 
 
-def partition_one_phase(send_list: list[dict[set]], core_cnt: int, name: str, node_core_cnt: int):
-    recv_lists = [dict() for _ in range(core_cnt)]
-    send_lists = [dict() for _ in range(core_cnt)]
-    # fill the send & recv lists where the keys are processors and values are vertexes
-    for send_idx in range(core_cnt):
-        for vtx, rec_idxs in send_list[send_idx].items():
-            for rec_idx in rec_idxs:
-                if send_idx not in recv_lists[rec_idx]:
-                    recv_lists[rec_idx][send_idx] = []
-                recv_lists[rec_idx][send_idx].append(vtx)
-                if rec_idx not in send_lists[send_idx]:
-                    send_lists[send_idx][rec_idx] = []
-                send_lists[send_idx][rec_idx].append(vtx)
+def partition_one_phase(vtx_based_send_list: list[dict[set]], core_cnt: int, name: str, node_core_cnt: int):
+    recv_lists, send_lists = util.parse_processor_based_lists(vtx_based_send_list, core_cnt)
 
     # get their volumes
     send_vols = [sum(len(v) for v in send_lists[i].values()) for i in range(core_cnt)]

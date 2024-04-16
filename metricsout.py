@@ -179,7 +179,7 @@ def create_excel(args, data, datasets):
             cell.border = Border(right=double)
 
     # Save the workbook
-    wb.save(f'out/{args.core_cnt}cores-{args.volumemode}-{get_algorithm_name(args)}-node{args.node_core_count}.xlsx')
+    wb.save(f'out/{args.core_cnt}cores-{args.alpha}-{get_algorithm_name(args)}-node{args.node_core_count}.xlsx')
 
 
 def print_vol_excel(vol_df: dict[str, list[int]], node_core_cnt, core_cnt) -> None:

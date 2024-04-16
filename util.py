@@ -1,14 +1,16 @@
 import math
 import os
+import time
 from enum import Enum
 
 import numpy as np
+import pymetis
 from scipy.io import mminfo, mmread, mmwrite
 
 from torch_geometric.datasets import Planetoid, PPI, Reddit, Amazon, KarateClub, AmazonProducts, Yelp, Flickr
 import torch_geometric.transforms as transforms
 
-MIN_REASSIGN_LIMIT = 4
+MIN_REASSIGN_LIMIT = 2
 
 
 def cv(x):
@@ -91,14 +93,17 @@ def get_uniform_mapping(cpu_cnt, vtx_count):
 
 
 class DestData:
-    partition = {}
+    partition: list[int, int] = []  # key: vertex, value: processor
+    vtx_reqs: list[dict[int, set]] = []  # key: prc, vertex, value: set of vertices
+
+    alpha = 0.0
 
     def __init__(self, vid, recv_vol=0):
         self.expands = dict()
         self.reassign_cores = dict()
         self.send_vol: int = 0
         self.id = vid
-        self.recv_vol = recv_vol
+        self.recv_vol = recv_vol * DestData.alpha
 
     # returns tr, oet, ret send volumes
     def tr_oet_ret_vol(self) -> tuple[int, int, int]:
@@ -110,6 +115,14 @@ class DestData:
 
     def volume(self):
         return self.send_vol + self.recv_vol
+
+    def real_volume(self):
+        if DestData.alpha == 0:
+            raise Exception("Invalid alpha value!")
+        return self.send_vol + self.recv_vol / DestData.alpha
+
+    def decrease_recv_vol(self, val):
+        self.recv_vol -= val * DestData.alpha
 
     # calculate the cost from the dict itself rather than the volume variable
     def send_cost_raw(self):
@@ -175,7 +188,7 @@ class DestData:
 
     # assumes the task for this key exists
     def is_oet(self, key: int):
-        return not self.is_owner(key) and not self.is_tr(key)
+        return self.is_owner(key) and not self.is_tr(key)
 
     def __str__(self):
         return self.expands.__str__()
@@ -282,14 +295,13 @@ class MetricTracker:
 
 class VolInit(Enum):
     EMPTY = 0
-    RECV = 1
-    METIS = 2
-    METIS_AND_RECV = 3
+    METIS = 1
 
 
-def get_opt_send_list(send_list: list[dict], init_type: VolInit, t: MetricTracker):
+def get_opt_send_list(send_list: list[dict], alpha: float, noconstructive: bool, t: MetricTracker):
     proc_cnt = len(send_list)
-    if init_type & 1 == 1:
+    DestData.alpha = alpha
+    if alpha > 0:
         recv_vols = np.zeros(dtype=int, shape=proc_cnt)
         for i in range(proc_cnt):
             d = send_list[i]
@@ -300,7 +312,7 @@ def get_opt_send_list(send_list: list[dict], init_type: VolInit, t: MetricTracke
     else:
         ret = [DestData(v) for v in range(proc_cnt)]
 
-    if init_type & 2 == 2:
+    if noconstructive:
         for data in ret:
             d = send_list[data.id]
             for k, v in d.items():
@@ -337,3 +349,65 @@ def get_node_range(core_idx: int, core_cnt: int, node_core_cnt):
     if end > core_cnt:
         end = core_cnt - 1
     return int(start), int(end)
+
+
+def mapping_exists(core_cnt, name):
+    return os.path.exists(f"mmdsets/schemes/{name}.inpart.{core_cnt}")
+
+
+def get_mapping(core_cnt, name):
+    with open(f"mmdsets/schemes/{name}.inpart.{core_cnt}") as f:
+        return [int(x) for x in f.read().split()]
+
+
+def gen_send_list(core_cnt, name, adj_mat, coo_data, wg):
+    # generate a random ownership list
+    # check whether mapping exists
+    mexists = mapping_exists(core_cnt, name)
+    if mexists:
+        mappings = get_mapping(core_cnt, name)
+    else:
+        mappings = pymetis.part_graph(core_cnt, adjacency=adj_mat, vweights=wg)[1]
+
+    send_list: list[dict[set]] = [dict() for _ in range(core_cnt)]  # keys are vtxs, values are sets of receiver prcrs
+    vtx_reqs: list[dict[set]] = [dict() for _ in range(core_cnt)]  # keys are vtxs, values are sets of sender vtxs
+    DestData.vtx_reqs = vtx_reqs
+    DestData.partition = mappings
+    DestData.recv_vtxs = [set() for _ in range(core_cnt)]
+    # parse the data
+    for i in range(len(coo_data[0])):
+        v_i = coo_data[0, i]
+        v_j = coo_data[1, i]
+        sender_idx = mappings[v_i]
+        rec_idx = mappings[coo_data[1, i]]
+        if rec_idx == sender_idx:
+            continue
+        if v_i not in send_list[sender_idx]:
+            send_list[sender_idx][v_i] = set()
+        send_list[sender_idx][v_i].add(rec_idx)
+        if v_j not in vtx_reqs[rec_idx]:
+            vtx_reqs[rec_idx][v_j] = set()
+        vtx_reqs[rec_idx][v_j].add(v_i)
+        DestData.recv_vtxs[rec_idx].add(v_i)
+    # save mapping
+    if not mexists:
+        with open(f"mmdsets/schemes/{name}.inpart.{core_cnt}", "w") as f:
+            f.write("\n".join([str(x) for x in mappings]))
+
+    return send_list
+
+
+def parse_processor_based_lists(send_list, core_cnt):
+    recv_lists = [dict() for _ in range(core_cnt)]
+    send_lists = [dict() for _ in range(core_cnt)]
+    # fill the send & recv lists where the keys are processors and values are vertexes
+    for send_idx in range(core_cnt):
+        for vtx, rec_idxs in send_list[send_idx].items():
+            for rec_idx in rec_idxs:
+                if send_idx not in recv_lists[rec_idx]:
+                    recv_lists[rec_idx][send_idx] = []
+                recv_lists[rec_idx][send_idx].append(vtx)
+                if rec_idx not in send_lists[send_idx]:
+                    send_lists[send_idx][rec_idx] = []
+                send_lists[send_idx][rec_idx].append(vtx)
+    return send_lists, recv_lists

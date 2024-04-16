@@ -12,7 +12,7 @@ def get_p1_threshold(opt_send_list):
         for k in dest_data.reassign_cores.keys():
             volumes[i] += len(dest_data.expands[k])
             for rec_idx in dest_data.expands[k]:
-                volumes[rec_idx] += 1
+                volumes[rec_idx] += DestData.alpha
     tr_vols = list(volumes)
     # then insert the OETs
     for i, dest_data in enumerate(opt_send_list):
@@ -21,7 +21,7 @@ def get_p1_threshold(opt_send_list):
             if dest_data.is_oet(k):
                 volumes[i] += len(v)
                 for rec_idx in v:
-                    volumes[rec_idx] += 1
+                    volumes[rec_idx] += DestData.alpha
     return tr_vols, volumes
 
 
@@ -88,7 +88,7 @@ def get_phs1_lowest_volume(opt_send_list, tr_vols: list[int], threshold):
         volumes[min_idx] += len(min_expand[1])
         # update receive volumes
         for v in min_expand[1]:
-            volumes[v] += 1
+            volumes[v] += DestData.alpha
 
         # remove the lowest expand
         expands[min_idx].pop(0)

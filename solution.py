@@ -11,6 +11,7 @@ from tqdm import tqdm
 from util import Assigment, MetricTracker, DestData, MIN_REASSIGN_LIMIT, get_opt_send_list
 from binout import partition_phases, write_partitions, partition_one_phase
 from metricsout import create_excel
+from reduce import og_vtx_cnt
 
 epilog_text = '''Matrix market files are read from the ./mmdsets foler. Phase partition file is written to the ./out 
     folder. The other inpart files are written to ./mmdsets/schemes folder.'''
@@ -29,10 +30,6 @@ group.add_argument('--noconstructive', action='store_true',
                    help='If set, the constructive algorithm will be disabled.')
 group.add_argument('--noiterative', action='store_true',
                    help='If set, the iterative improvement algorithm will be disabled.')
-group.add_argument('-v', '--volumemode', type=int,
-                   help='Determines the initialization method for the bins. 0 for empty bins, 1 for bins with receive '
-                        'volumes. Default is 1.',
-                   default=1, choices=range(0, 2))
 group.add_argument("--itercvthreshold", type=float,
                    help="Sets the threshold for the coefficient of variance of volumes. The iterative improvement "
                         "algorithm will continue to run until this threshold is met or the maximum iteration count "
@@ -49,6 +46,9 @@ group.add_argument("--part_method", type=int,
 group.add_argument("--node_core_count", type=int, metavar="N",
                    help="Specify the number of cores in a node. Default is 1. Assumes that the cores are sequential.",
                    default=1)
+group.add_argument("-a", "--alpha", type=float, metavar="A",
+                   help="Sets the scale factor of recv volumes. Default is 1.0.",
+                   default=1.0)
 
 run_parser = subparsers.add_parser('run', help='Runs the algorithm on a specified dataset', parents=[group],
                                    epilog=epilog_text)
@@ -79,15 +79,15 @@ group.add_argument("-e", "--exp", type=int,
 benchmark_parser.add_argument('-d', '--datasets', type=str, nargs='+',
                               help='The names of the datasets. Corresponding matrix market files should be located in '
                                    'the ./mmdests folder.')
+benchmark_parser.add_argument("--iter-alpha", action="store_true",
+                              help="If set, the alpha value will be iterated from 0.0 to 1.0 with 0.1 increments",
+                              default=False)
 
 args = parser.parse_args()
 
 dec_order = True
-
 if args.noconstructive and args.noiterative:
     raise Exception("At least one of the algorithms must be enabled!")
-if args.noconstructive:
-    args.volumemode += 2
 if args.mode == 'benchmark' and args.datasets is None:
     raise Exception("At least one dataset must be specified")
 if args.mode == 'run' and args.dataset_name is None:
@@ -99,6 +99,9 @@ if args.node_core_count < 1:
 if args.node_core_count >= args.core_cnt:
     # setting node_core_count to 1 since it's meaningless for this case
     args.node_core_count = 1
+# check alpha
+if args.alpha < 0 or args.alpha > 1:
+    raise Exception("Alpha must be between 0 and 1")
 print(args)
 
 
@@ -113,27 +116,7 @@ def get_core_iterator():
         return [(args.exp ** i) * args.core_cnt for i in range(iter_count)]
 
 
-def execute(core_cnt, ignore_benchmark):
-    # generate a random ownership list
-    # mappings = pymetis.part_graph(core_cnt, adjacency=adj_mat)[1]
-    mappings = pymetis.part_graph(core_cnt, adjacency=adj_mat, vweights=wg)[1]
-
-    send_list = [dict() for _ in range(core_cnt)]
-    DestData.partition = mappings
-    parse_start_time = time.perf_counter()
-
-    # parse the data
-    for i in range(len(coo_data[0])):
-        v_i = coo_data[0, i]
-        v_j = coo_data[1, i]
-        sender_idx = mappings[v_i]
-        rec_idx = mappings[coo_data[1, i]]
-        if rec_idx == sender_idx:
-            continue
-        if v_i not in send_list[sender_idx]:
-            send_list[sender_idx][v_i] = set()
-        send_list[sender_idx][v_i].add(rec_idx)
-
+def execute(core_cnt, ignore_benchmark, alpha, send_list):
     # metric tracker
     t = MetricTracker()
 
@@ -141,7 +124,7 @@ def execute(core_cnt, ignore_benchmark):
     degree_list = util.get_sorted_degree_list(send_list)
 
     # send list that will be optimized by the algorithms
-    opt_send_list = get_opt_send_list(send_list, args.volumemode, t)
+    opt_send_list = get_opt_send_list(send_list, alpha, args.noconstructive, t)
 
     # execute the algorithms
     start_time = time.perf_counter()
@@ -163,19 +146,21 @@ def execute(core_cnt, ignore_benchmark):
                 iter_idx += 1
         else:
             iterative_improvement(opt_send_list, send_list, t, degree_list)
+            # if iter_alpha true print the cv for recv+send and send only
+            opt_vols = [x.real_volume() for x in opt_send_list]
+            send_vols = [x.send_vol for x in opt_send_list]
+            cv = util.cv(opt_vols)
+            print(f"{name}-{core_cnt}-{alpha}: r+s cv: {cv}, so cv: {util.cv(send_vols)}")
 
     end_time = time.perf_counter()
     execution_time = end_time - start_time
-    p_execution_time = end_time - parse_start_time
+    p_execution_time = end_time - start_time
 
     # communication partition
-    two_phase_delay = partition_phases(opt_send_list, core_cnt, name, util.PartitionType(args.part_method),
-                                       send_list)
+    two_phase_delay = partition_phases(opt_send_list, core_cnt, name, util.PartitionType(args.part_method), alpha)
     if args.onephase:
         partition_one_phase(send_list, core_cnt, name, args.node_core_count)
 
-    # write partitions as file
-    write_partitions(mappings, core_cnt, name)
     if not ignore_benchmark:
         vols = [util.get_volume(send_list[opt_d.id]) + opt_d.recv_vol for opt_d in opt_send_list]
         e_degrees = [len(arr) for s in send_list for arr in s.values()]
@@ -194,7 +179,7 @@ def execute(core_cnt, ignore_benchmark):
             # 16: expand task count, 17: expand degree avg, 18: expand degree sum
             # 19: max expand degree, 20: min expand degree, 21: avg ed, 22: cv ed, 23: highest 10% / total
 
-            execution_res = [vtx_count, len(coo_data[0]), execution_time, p_execution_time, core_cnt, t.reassign_cnt,
+            execution_res = [execution_time, p_execution_time, core_cnt, t.reassign_cnt,
                              t.non_reassign_cnt, t.reassign_vol, two_phase_delay,  # 8
                              np.sum(vols) / core_cnt, init_cv, opt_cv, np.max(vols), np.max(opt_vols), np.min(vols),
                              np.min(opt_vols),
@@ -321,27 +306,45 @@ def assign(core_dest_data: DestData, vtx: int, send_set: set, opt_send_list: lis
     core_dest_data.insert(vtx, best_owner_reserves)
 
 
+def get_alpha_iterator():
+    if args.iter_alpha:
+        return [x / 10 for x in range(1, 11)]
+    else:
+        return [args.alpha]
+
+
+def start_and_execute(name, ignore_benchmark, iterator=None):
+    # get the matrix market data
+    coo_data, vtx_count, adj_mat, wg = util.get_coo_mat(name)
+    global vertex_count
+    vertex_count = vtx_count
+    print(vertex_count)
+    # execute the algorithm
+    if iterator is None:
+        iterator = [args.core_cnt]
+    results = []
+    for i in iterator:
+        send_list = util.gen_send_list(i, name, adj_mat, coo_data, wg)
+        edge_cnt = len(coo_data[0])
+        for alpha in get_alpha_iterator():
+            # remove reduced vertices
+            del DestData.partition[vtx_count:]
+            args.alpha = alpha
+            r = execute(i, ignore_benchmark, alpha, send_list)
+            # add vertex count and edge count to the results
+            r = np.concatenate(([vtx_count, edge_cnt], r))
+            results.append(r)
+    del coo_data
+    return results
+
+
 # Check the mode of operation and call the appropriate function
 if args.mode == 'run':
     name = args.dataset_name
-    coo_data, vtx_count, adj_mat, wg = util.get_coo_mat(name)
-    execute(args.core_cnt, ignore_benchmark=True)
+    r = start_and_execute(name, True)
 elif args.mode == 'benchmark':
-    if len(args.datasets) == 1 and args.loop is None and args.exp is None:
-        name = args.datasets[0]
-        coo_data, vtx_count, adj_mat, wg = util.get_coo_mat(name)
-        r = execute(args.core_cnt, ignore_benchmark=False)
-        create_excel(args, [r], args.datasets)
-    else:
-        results = []
-        for name in tqdm(args.datasets):
-            coo_data, vtx_count, adj_mat, wg = util.get_coo_mat(name)
-            print(str(name) + ": " + str(vtx_count))
-            iterator = get_core_iterator()
-            for i in iterator:
-                r = execute(i, ignore_benchmark=False)
-                # r.insert(0, name)
-                results.append(r)
-            del adj_mat
-        create_excel(args, results, args.datasets)
+    results = []
+    for name in tqdm(args.datasets):
+        results.extend(start_and_execute(name, False, get_core_iterator()))
+    create_excel(args, results, args.datasets)
 # else part is unreachable

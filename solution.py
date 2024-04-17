@@ -8,10 +8,11 @@ import metricsout
 import util
 import argparse
 from tqdm import tqdm
-from util import Assigment, MetricTracker, DestData, MIN_REASSIGN_LIMIT, get_opt_send_list
-from binout import partition_phases, write_partitions, partition_one_phase
+from util import Assigment, MetricTracker, DestData, MIN_REASSIGN_LIMIT, get_opt_send_list, PartitionType, FolderM, \
+    launch_convert_bin1d
+from binout import partition_phases, partition_one_phase
 from metricsout import create_excel
-from reduce import og_vtx_cnt
+from reduce import reduce_post_processing, get_rdc, reduce_map
 
 epilog_text = '''Matrix market files are read from the ./mmdsets foler. Phase partition file is written to the ./out 
     folder. The other inpart files are written to ./mmdsets/schemes folder.'''
@@ -49,6 +50,10 @@ group.add_argument("--node_core_count", type=int, metavar="N",
 group.add_argument("-a", "--alpha", type=float, metavar="A",
                    help="Sets the scale factor of recv volumes. Default is 1.0.",
                    default=1.0)
+group.add_argument("--noreduce", action="store_true", help="If set, reduce post processing will be disabled.")
+group.add_argument("--convertbin", type=str,
+                   help="Applies the ConvertBin1D.py script to every inpart file generated. You must define the "
+                        "interpreter path and the script path. usage: --convertbin 'python3.11 path/to/ConvertBin1D.py'")
 
 run_parser = subparsers.add_parser('run', help='Runs the algorithm on a specified dataset', parents=[group],
                                    epilog=epilog_text)
@@ -117,6 +122,7 @@ def get_core_iterator():
 
 
 def execute(core_cnt, ignore_benchmark, alpha, send_list):
+    FolderM.set(name, core_cnt, alpha)
     # metric tracker
     t = MetricTracker()
 
@@ -155,9 +161,13 @@ def execute(core_cnt, ignore_benchmark, alpha, send_list):
     end_time = time.perf_counter()
     execution_time = end_time - start_time
     p_execution_time = end_time - start_time
+    if not args.noreduce:
+        reduce_post_processing(opt_send_list, core_cnt, name)
+    if args.convertbin is not None:
+        launch_convert_bin1d(args.convertbin, name)
 
     # communication partition
-    two_phase_delay = partition_phases(opt_send_list, core_cnt, name, util.PartitionType(args.part_method), alpha)
+    two_phase_delay = partition_phases(opt_send_list, core_cnt, name, PartitionType(args.part_method))
     if args.onephase:
         partition_one_phase(send_list, core_cnt, name, args.node_core_count)
 
@@ -316,9 +326,7 @@ def get_alpha_iterator():
 def start_and_execute(name, ignore_benchmark, iterator=None):
     # get the matrix market data
     coo_data, vtx_count, adj_mat, wg = util.get_coo_mat(name)
-    global vertex_count
-    vertex_count = vtx_count
-    print(vertex_count)
+    DestData.initial_vtx_cnt = vtx_count
     # execute the algorithm
     if iterator is None:
         iterator = [args.core_cnt]

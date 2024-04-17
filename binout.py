@@ -1,3 +1,4 @@
+import os
 import struct
 from itertools import chain
 from typing import Sized
@@ -6,7 +7,8 @@ import numpy as np
 
 import partition
 import util
-from util import DestData, PartitionType
+from util import DestData, PartitionType, FolderM
+from reduce import reduce_map
 
 
 def assign_comm_list(dest_data: DestData, comm_list: list[(dict, dict)], send: bool, p1_selection: set):
@@ -62,8 +64,7 @@ def update_start_positions(file, processor_start_positions):
 
 
 # writes phase partitions to binary file
-def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, partition_type: PartitionType,
-                     alpha: float):
+def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, partition_type: PartitionType):
     tr_vols, phase1_vols = partition.get_p1_threshold(opt_send_list)
     tr_max = np.max(tr_vols)
     phase1_min = np.min(phase1_vols)
@@ -104,10 +105,9 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
         print("BUG: send and recv volumes are not equal")
         exit(1)
     # Create and open the binary file with placeholder values
-    alpha_str = str(alpha).replace(".", "")  # remove the dot
-    fname = f"out/{name}.phases.{alpha_str}.{core_cnt}.bin"
+    fname = FolderM.get_name(f"{name}.phases.{core_cnt}.bin")
     with open(fname, 'w+b') as file:
-        init_bin_file(file, core_cnt)
+        init_bin_file(file, core_cnt + 1)  # +1 for reduce vertex list
         proc_ptrs = []
         for i in range(core_cnt):
             proc_ptrs.append(file.tell())
@@ -131,6 +131,14 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
                 for l in range(core_cnt):
                     vertexes.extend(sorted(recv_lists[i][p][l]) if l in recv_lists[i][p] else [])
             write_bin_file(file, vertexes)
+        # write reduce_map
+        reduce_ranges = [len(x) for x in reduce_map]
+        reduce_ranges.insert(0, 0)
+        rmap_merges = list(chain.from_iterable(reduce_map))
+        proc_ptrs.append(file.tell())
+        write_bin_file(file, reduce_ranges)
+        write_bin_file(file, rmap_merges)
+
         # write proc ptrs
         update_start_positions(file, proc_ptrs)
 
@@ -162,14 +170,6 @@ def partition_one_phase(vtx_based_send_list: list[dict[set]], core_cnt: int, nam
 
         # write proc ptrs
         update_start_positions(file, proc_ptrs)
-
-
-# writes vertex mappings to binary file
-def write_partitions(mappings: list, core_cnt: int, name: str):
-    fname = f"mmdsets/schemes/{name}.inpart.{core_cnt}"
-    with open(fname, 'w') as file:
-        for m in mappings:
-            file.write(f"{m}\n")
 
 
 def get_out_of_node_vol_info(lists, core_cnt, node_core_cnt):

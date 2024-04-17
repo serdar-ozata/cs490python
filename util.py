@@ -93,8 +93,9 @@ def get_uniform_mapping(cpu_cnt, vtx_count):
 
 
 class DestData:
+    initial_vtx_cnt = 0
     partition: list[int, int] = []  # key: vertex, value: processor
-    vtx_reqs: list[dict[int, set]] = []  # key: prc, vertex, value: set of vertices
+    vtx_edges: list[dict[int, set]] = []  # key: prc, vertex, value: set of vertices
 
     alpha = 0.0
 
@@ -162,6 +163,12 @@ class DestData:
         self.expands.pop(key, None)
         self.send_vol -= e_len
         return e_len
+
+    def remove_value(self, key, value):
+        self.expands[key].remove(value)
+        self.send_vol -= 1
+        if len(self.expands[key]) == 0:
+            self.expands.pop(key)
 
     def extract_assignment(self, key):
         data = self.expands[key]
@@ -371,7 +378,7 @@ def gen_send_list(core_cnt, name, adj_mat, coo_data, wg):
 
     send_list: list[dict[set]] = [dict() for _ in range(core_cnt)]  # keys are vtxs, values are sets of receiver prcrs
     vtx_reqs: list[dict[set]] = [dict() for _ in range(core_cnt)]  # keys are vtxs, values are sets of sender vtxs
-    DestData.vtx_reqs = vtx_reqs
+    DestData.vtx_edges = vtx_reqs
     DestData.partition = mappings
     DestData.recv_vtxs = [set() for _ in range(core_cnt)]
     # parse the data
@@ -391,8 +398,7 @@ def gen_send_list(core_cnt, name, adj_mat, coo_data, wg):
         DestData.recv_vtxs[rec_idx].add(v_i)
     # save mapping
     if not mexists:
-        with open(f"mmdsets/schemes/{name}.inpart.{core_cnt}", "w") as f:
-            f.write("\n".join([str(x) for x in mappings]))
+        write_partitions(mappings, f"mmdsets/schemes/{name}.inpart.{core_cnt}")
 
     return send_list
 
@@ -411,3 +417,29 @@ def parse_processor_based_lists(send_list, core_cnt):
                     send_lists[send_idx][rec_idx] = []
                 send_lists[send_idx][rec_idx].append(vtx)
     return send_lists, recv_lists
+
+
+class FolderM:
+    fpath = ""
+
+    @staticmethod
+    def set(dataset_name: str, core_cnt: int, alpha: float):
+        os.makedirs("folders", exist_ok=True)
+        FolderM.fpath = f"folders/{dataset_name}-{core_cnt}-{alpha}"
+        os.makedirs(FolderM.fpath, exist_ok=True)
+
+    @staticmethod
+    def get_name(name: str):
+        return f"{FolderM.fpath}/{name}"
+
+
+# writes vertex mappings to binary file
+def write_partitions(mappings: list, fname: str):
+    with open(fname, 'w') as file:
+        for m in mappings:
+            file.write(f"{m}\n")
+
+
+def launch_convert_bin1d(launch_script: str, dataset_name: str):
+    inpart_name = FolderM.get_name(f'{dataset_name}.reduced.mtx')
+    os.system(f"{launch_script} {inpart_name} .")

@@ -1,6 +1,7 @@
 import numpy as np
 
 from util import DestData
+from reduce import has_dependency
 
 
 def get_p1_threshold(opt_send_list):
@@ -25,7 +26,7 @@ def get_p1_threshold(opt_send_list):
     return tr_vols, volumes
 
 
-def get_phase1_oets(phase_vol, dest_data: DestData, tr_v):
+def get_phase1_oets(phase_vol, dest_data: DestData, tr_v):  # todo add reduce vertex check
     target_vol = phase_vol - tr_v
     selected = set()
     expands = [(k, len(v)) for k, v in dest_data.expands.items()]
@@ -77,8 +78,8 @@ def get_phs1_lowest_volume(opt_send_list, tr_vols: list[int], threshold):
         # find the lowest volume's highest expand [0]: k, [1]: values
         min_expand = expands[min_idx][0]
 
-        # discard if it's too big
-        if len(min_expand[1]) + min_vol > threshold:
+        # discard if it's too big or if it's a reduced vertex that has to be sent in phase 2
+        if len(min_expand[1]) + min_vol > threshold or has_dependency(min_expand[0]):
             expands[min_idx].pop(0)
             continue
 

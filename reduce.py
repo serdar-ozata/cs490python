@@ -29,11 +29,19 @@ def add_rdc_vtx(vtxs: list[int], owner: int, recv_vtx: int, recv_prc: int) -> in
 
 
 BETA = 2.0
-REDUCE_VTX_THRESHOLD = 2
+REDUCE_VTX_THRESHOLD = 1
 
 
 def get_volumes(dest_data: list[DestData]) -> list[int]:
     return [d.volume() for d in dest_data]
+
+
+def get_max(volumes: list[int], filled_expands: list[bool]) -> int:
+    max_volume = max(volumes)
+    for i, volume in enumerate(volumes):
+        if volume == max_volume and not filled_expands[i]:
+            return i
+    return -1  # return -1 if no such index exists
 
 
 def reduce_post_processing(data: list[DestData], core_cnt: int, name: str):
@@ -44,17 +52,21 @@ def reduce_post_processing(data: list[DestData], core_cnt: int, name: str):
 
     # int: sender prc, int: receive vtx, set: vtxs owned by the sender and have edges to receive vtx after our algorithm
     parsed_expands: list[list[(int, int, set)]] = [[] for _ in range(core_cnt)]  # filled on demand for opt. reasons
+    filled_expands = [False for _ in range(core_cnt)]
     while True:
         vls = get_volumes(data)
-        max_idx = np.argmax(vls)
+        max_idx = get_max(vls, filled_expands)
+        if max_idx == -1:
+            break
         avg_vol = np.mean(vls)
         # check whether reduce op is needed
         if avg_vol + BETA > vls[max_idx]:
             break
         # this data structure holds which vertices are requested by which vertex. In other words: the original edges
-        local_vtx_edges = DestData.vtx_edges[max_idx]
+        local_vtx_edges = DestData.vtx_edges[max_idx].copy()
         # if not parsed, parse
-        if not parsed_expands[max_idx]:
+        if not filled_expands[max_idx]:
+            filled_expands[max_idx] = True
             # parse every edge group and sort them according to their degree
             local_prs_expands = dict()
             for (recv_vtx, vtxs) in local_vtx_edges.items():
@@ -78,7 +90,13 @@ def reduce_post_processing(data: list[DestData], core_cnt: int, name: str):
             # sort the parsed expands according to their degree
             parsed_expands[max_idx].extend([(k[0], k[1], v) for k, v in local_prs_expands.items()
                                             if len(v) > REDUCE_VTX_THRESHOLD])
-            parsed_expands[max_idx].sort(key=lambda x: len(x[2]), reverse=True)
+            parsed_expands[max_idx].sort(key=lambda x: len(x[2]))
+            # keep 30 percent of the expands
+            # parsed_expands[max_idx] = parsed_expands[max_idx][int(len(parsed_expands[max_idx]) * 0.7):]
+            print(f"avg expand degree: {np.mean([len(x[2]) for x in parsed_expands[max_idx]])}")
+        else:
+            break
+            # raise ValueError("If this case does happen, I have to change some stuff")
 
         all_skipped = True
         while len(parsed_expands[max_idx]) > 0:
@@ -95,18 +113,25 @@ def reduce_post_processing(data: list[DestData], core_cnt: int, name: str):
             for vtx in list(vtxs_to_reduce):
                 if vtx in reduced_sender_data.reassign_cores and reduced_sender_data.reassign_cores[vtx] == max_idx:
                     vtxs_to_reduce.remove(vtx)  # cannot discard a vertex if it's reassigned
-
-            for f_recv_vtx, vtxs_needed in local_vtx_edges.items():
-                if f_recv_vtx == rcv_vtx:
-                    continue
-                for vtx_needed in vtxs_needed:
-                    if vtx_needed in vtxs_to_reduce:
-                        vtxs_to_reduce.remove(vtx_needed)
-                        if len(vtxs_to_reduce) == 0:
-                            break
+            local_vtx_edges.pop(rcv_vtx, None)  # no need to update with the reduced vertex, just remove it
+            try:
+                for f_recv_vtx, vtxs_needed in local_vtx_edges.items():
+                    # if f_recv_vtx == rcv_vtx:
+                    #     continue
+                    for vtx_needed in vtxs_needed:
+                        if vtx_needed in vtxs_to_reduce:
+                            vtxs_to_reduce.remove(vtx_needed)
+                            if len(vtxs_to_reduce) == 0:
+                                raise StopIteration
+            except StopIteration:
+                pass
+            removed_vtx_cnt = 0
             # the remaining vertices can be removed from the expand list
             for vtx_to_remove in vtxs_to_reduce:
-                reduced_sender_data.remove_value(vtx_to_remove, max_idx)
+                # print(vtx_to_remove, max_idx, sender_idx)
+                if reduced_sender_data.remove_value(vtx_to_remove, max_idx):
+                    removed_vtx_cnt += 1
+            data[max_idx].decrease_recv_vol(removed_vtx_cnt - 1)
             # finally add the reduced vertex to the expand list
             reduced_sender_data.insert(gen_vtx, [max_idx])
 

@@ -165,10 +165,13 @@ class DestData:
         return e_len
 
     def remove_value(self, key, value):
-        self.expands[key].remove(value)
-        self.send_vol -= 1
-        if len(self.expands[key]) == 0:
-            self.expands.pop(key)
+        if key in self.expands and value in self.expands[key]:
+            self.expands[key].remove(value)
+            self.send_vol -= 1
+            if len(self.expands[key]) == 0:
+                self.expands.pop(key)
+            return True
+        return False
 
     def extract_assignment(self, key):
         data = self.expands[key]

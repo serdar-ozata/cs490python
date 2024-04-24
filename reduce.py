@@ -10,7 +10,7 @@ def get_rdc(i: int) -> list[int]:
 
 
 def has_dependency(vtx: int):
-    if vtx < DestData.initial_vtx_cnt:
+    if vtx <= DestData.initial_vtx_cnt:
         return False
     owner_prc = DestData.partition[vtx]
     for dep_vtx in get_rdc(vtx):

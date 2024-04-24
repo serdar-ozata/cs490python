@@ -419,7 +419,7 @@ def parse_processor_based_lists(send_list, core_cnt):
                 if rec_idx not in send_lists[send_idx]:
                     send_lists[send_idx][rec_idx] = []
                 send_lists[send_idx][rec_idx].append(vtx)
-    return send_lists, recv_lists
+    return recv_lists, send_lists
 
 
 class FolderM:
@@ -445,4 +445,9 @@ def write_partitions(mappings: list, fname: str):
 
 def launch_convert_bin1d(launch_script: str, dataset_name: str):
     inpart_name = FolderM.get_name(f'{dataset_name}.reduced.mtx')
-    os.system(f"{launch_script} {inpart_name} .")
+    if not os.path.exists(inpart_name):
+        inpart_name = f"mmdsets/{dataset_name}.mtx"
+        extract_pth = "schemes"
+    else:
+        extract_pth = "."
+    os.system(f"{launch_script} {inpart_name} {extract_pth}")

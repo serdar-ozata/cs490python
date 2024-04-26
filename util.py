@@ -198,7 +198,7 @@ class DestData:
 
     # assumes the task for this key exists
     def is_oet(self, key: int):
-        return self.is_owner(key) and not self.is_tr(key)
+        return self.is_owner(key)
 
     def __str__(self):
         return self.expands.__str__()
@@ -235,6 +235,7 @@ class Assigment(Enum):
 
 
 class PartitionType(Enum):
+    NONE = 0
     LOWEST_VOLUME = 1
     SUBSET_SUM = 2
 

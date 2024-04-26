@@ -10,10 +10,9 @@ def get_p1_threshold(opt_send_list):
     # first only insert the TRs
     for i in range(core_cnt):
         dest_data = opt_send_list[i]
-        for k in dest_data.reassign_cores.keys():
-            volumes[i] += len(dest_data.expands[k])
-            for rec_idx in dest_data.expands[k]:
-                volumes[rec_idx] += DestData.alpha
+        for k, prc in dest_data.reassign_cores.items():
+            volumes[i] += 1
+            volumes[prc] = DestData.alpha
     tr_vols = list(volumes)
     # then insert the OETs
     for i, dest_data in enumerate(opt_send_list):
@@ -75,7 +74,7 @@ def get_phs1_lowest_volume(opt_send_list, tr_vols: list[int], threshold):
             volumes[min_idx] = threshold + 1
             continue
 
-        # find the lowest volume's highest expand [0]: k, [1]: values
+        # find the lowest volume's highest expand [0]: vtx, [1]: processors
         min_expand = expands[min_idx][0]
 
         # discard if it's too big or if it's a reduced vertex that has to be sent in phase 2
@@ -91,10 +90,6 @@ def get_phs1_lowest_volume(opt_send_list, tr_vols: list[int], threshold):
         for v in min_expand[1]:
             volumes[v] += DestData.alpha
 
-        # remove the lowest expand
+        # remove the highest expand
         expands[min_idx].pop(0)
-
-    # add all TRs to the selected
-    for i, dest_data in enumerate(opt_send_list):
-        selected[i].update(dest_data.reassign_cores.keys())
     return selected

@@ -13,6 +13,14 @@ from reduce import reduce_map
 
 def assign_comm_list(dest_data: DestData, comm_list: list[(dict, dict)], send: bool, p1_selection: set):
     sender_idx = dest_data.id
+
+    for vtx, rec_idx in dest_data.reassign_cores.items():
+        main_idx = sender_idx if send else rec_idx
+        other_idx = rec_idx if send else sender_idx
+        if other_idx not in comm_list[other_idx][0]:
+            comm_list[main_idx][0][other_idx] = []
+        comm_list[main_idx][0][other_idx].append(vtx)
+
     for vtx, prcs in dest_data.expands.items():
         if vtx in p1_selection:
             dict_idx = 0
@@ -24,12 +32,6 @@ def assign_comm_list(dest_data: DestData, comm_list: list[(dict, dict)], send: b
             if other_idx not in comm_list[main_idx][dict_idx]:
                 comm_list[main_idx][dict_idx][other_idx] = []
             comm_list[main_idx][dict_idx][other_idx].append(vtx)
-    # for vtx, rec_idx in dest_data.reassign_cores.items():
-    #     main_idx = sender_idx if send else rec_idx
-    #     other_idx = rec_idx if send else sender_idx
-    #     if other_idx not in comm_list[other_idx][0]:
-    #         comm_list[main_idx][0][other_idx] = []
-    #     comm_list[main_idx][0][other_idx].append(vtx)
 
 
 def write_ranges(file, data_list: dict[int, Sized], core_cnt: int):
@@ -65,6 +67,11 @@ def update_start_positions(file, processor_start_positions):
 
 # writes phase partitions to binary file
 def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, partition_type: PartitionType):
+    # remove reassigned vertices from the list
+    for dest_data in opt_send_list:
+        for vtx, prc in dest_data.reassign_cores.items():
+            if prc == dest_data.id:
+                dest_data.expands[vtx].remove(dest_data.id)
     tr_vols, phase1_vols = partition.get_p1_threshold(opt_send_list)
     tr_max = np.max(tr_vols)
     phase1_min = np.min(phase1_vols)
@@ -78,9 +85,10 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
     else:
         delay = 0
         phase1_vol = int(np.ceil((tr_max + phase1_min) / 2))
-        # phase1_vol = tr_max
     # phase partition
-    if partition_type == PartitionType.SUBSET_SUM:
+    if partition_type == PartitionType.NONE:
+        phase1_selections = [set() for _ in opt_send_list]
+    elif partition_type == PartitionType.SUBSET_SUM:
         phase1_selections = partition.get_phs1_subset_sum(opt_send_list, tr_vols, phase1_vol)
     elif partition_type == PartitionType.LOWEST_VOLUME:
         phase1_selections = partition.get_phs1_lowest_volume(opt_send_list, tr_vols, phase1_vol)

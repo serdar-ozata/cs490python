@@ -41,9 +41,9 @@ group.add_argument("--itermax", type=int, help="Sets the maximum iteration count
 group.add_argument("--onephase", action="store_true",
                    help="If set, an additional one phase partition file will be output.")
 group.add_argument("--part_method", type=int,
-                   help="Determines the partition method. 1 for filling by lowest volume, 2 for subset-sum. Default "
+                   help="Determines the partition method. 1 for filling by lowest volume, 2 for subset-sum, 0 for none. Default "
                         "is 1.",
-                   default=1, choices=range(1, 3))
+                   default=1, choices=range(0, 3))
 group.add_argument("--node_core_count", type=int, metavar="N",
                    help="Specify the number of cores in a node. Default is 1. Assumes that the cores are sequential.",
                    default=1)

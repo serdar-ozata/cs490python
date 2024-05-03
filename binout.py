@@ -112,6 +112,25 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
     if np.sum(send_vols[0]) != np.sum(recv_vols[0]) or np.sum(send_vols[1]) != np.sum(recv_vols[1]):
         print("BUG: send and recv volumes are not equal")
         exit(1)
+    # test
+    # dep_counts = np.zeros((core_cnt, core_cnt), dtype=int)
+    # dep_sets = [set() for _ in range(core_cnt * core_cnt)]
+    # for i in range(core_cnt):
+    #     for reassigned_vtx, reassigned_prc in opt_send_list[i].reassign_cores.items():
+    #         for rec_idx in opt_send_list[reassigned_prc].expands[reassigned_vtx]:
+    #             dep_sets[reassigned_prc * core_cnt + rec_idx].add(i)
+    # for i in range(core_cnt):
+    #     for j in range(core_cnt):
+    #         dep_counts[i][j] = len(dep_sets[i * core_cnt + j])
+    # del dep_sets
+    # print_stats_in_csv_format_2d(dep_counts)
+    # del dep_counts
+    avg_send_counts = np.zeros(core_cnt, dtype=int)
+    for i in range(core_cnt):
+        avg_send_counts[i] += len(send_lists[i][0].keys()) + len(send_lists[i][1].keys())
+    print(f"send count avg: {np.mean(avg_send_counts)}, max: {np.max(avg_send_counts)}, min: {np.min(avg_send_counts)}")
+    # END test
+
     # Create and open the binary file with placeholder values
     fname = FolderM.get_name(f"{name}.phases.{core_cnt}.bin")
     with open(fname, 'w+b') as file:
@@ -142,6 +161,7 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
         # write reduce_map
         reduce_ranges = [len(x) for x in reduce_map]
         reduce_ranges.insert(0, 0)
+        reduce_ranges = np.cumsum(reduce_ranges)
         rmap_merges = list(chain.from_iterable(reduce_map))
         proc_ptrs.append(file.tell())
         write_bin_file(file, reduce_ranges)
@@ -210,3 +230,15 @@ def get_out_of_node_vol_info_one_phs(lists, core_cnt, node_core_cnt):
     out_node_vols = [sum(out_node_vols[i:i + node_core_cnt]) for i in range(0, len(out_node_vols), node_core_cnt)]
     # out_node_vols = [out_node_vols[i:i + node_core_cnt] for i in range(0, len(out_node_vols), node_core_cnt)]
     return np.max(out_node_vols), np.min(out_node_vols), np.mean(out_node_vols)
+
+
+def print_stats_in_csv_format_2d(data):
+    total_max = np.max(data)
+    total_avg = np.mean(data)
+    total_min = np.min(data)
+    cv = np.std(data) / total_avg
+    prc_avgs = np.mean(data, axis=0)
+    max_prc_avg = np.max(prc_avgs)
+    min_prc_avg = np.min(prc_avgs)
+    # max,avg,min,cv,max_prc_avg,min_prc_avg
+    print(f"{total_max},{total_avg},{total_min},{cv},{max_prc_avg},{min_prc_avg}")

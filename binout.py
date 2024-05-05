@@ -8,7 +8,7 @@ import numpy as np
 import partition
 import util
 from util import DestData, PartitionType, FolderM
-from reduce import reduce_map
+from reduce import reduce_map, get_rdc
 
 
 def assign_comm_list(dest_data: DestData, comm_list: list[(dict, dict)], send: bool, p1_selection: set):
@@ -125,16 +125,19 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
     # del dep_sets
     # print_stats_in_csv_format_2d(dep_counts)
     # del dep_counts
-    avg_send_counts = np.zeros(core_cnt, dtype=int)
-    for i in range(core_cnt):
-        avg_send_counts[i] += len(send_lists[i][0].keys()) + len(send_lists[i][1].keys())
-    print(f"send count avg: {np.mean(avg_send_counts)}, max: {np.max(avg_send_counts)}, min: {np.min(avg_send_counts)}")
+    # avg_send_counts = np.zeros(core_cnt, dtype=int)
+    # for i in range(core_cnt):
+    #     avg_send_counts[i] += len(send_lists[i][0].keys()) + len(send_lists[i][1].keys())
+    # print(f"send count avg: {np.mean(avg_send_counts)}, max: {np.max(avg_send_counts)}, min: {np.min(avg_send_counts)}")
     # END test
-
+    # map reduced vtxs into processors
+    reduced_vtx_prc_map = [[] for _ in range(core_cnt)]
+    for i in range(DestData.initial_vtx_cnt, len(reduce_map) + DestData.initial_vtx_cnt):
+        reduced_vtx_prc_map[DestData.partition[i]].append(i)
     # Create and open the binary file with placeholder values
     fname = FolderM.get_name(f"{name}.phases.{core_cnt}.bin")
     with open(fname, 'w+b') as file:
-        init_bin_file(file, core_cnt + 1)  # +1 for reduce vertex list
+        init_bin_file(file, core_cnt)
         proc_ptrs = []
         for i in range(core_cnt):
             proc_ptrs.append(file.tell())
@@ -158,19 +161,22 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
                 for l in range(core_cnt):
                     vertexes.extend(sorted(recv_lists[i][p][l]) if l in recv_lists[i][p] else [])
             write_bin_file(file, vertexes)
-        # write reduce_map
-        reduce_ranges = [len(x) for x in reduce_map]
-        reduce_ranges.insert(0, 0)
-        reduce_ranges = np.cumsum(reduce_ranges)
-        rmap_merges = list(chain.from_iterable(reduce_map))
-        proc_ptrs.append(file.tell())
-        write_bin_file(file, reduce_ranges)
-        write_bin_file(file, rmap_merges)
+            # write reduced vertexes
+            write_reduced_vtxs(file, reduced_vtx_prc_map[i])
 
         # write proc ptrs
         update_start_positions(file, proc_ptrs)
 
     return delay
+
+
+def write_reduced_vtxs(file, reduced_vtxs: list[int]):
+    # write reduced vertexes
+    write_bin_file(file, [len(reduced_vtxs)])
+    for vtx in reduced_vtxs:
+        vtxs_reduced_from = get_rdc(vtx)
+        # vtx_id, vtx_reduced_from_count, ...vtxs_reduced_from
+        write_bin_file(file, [vtx, len(vtxs_reduced_from), *vtxs_reduced_from])
 
 
 def partition_one_phase(vtx_based_send_list: list[dict[set]], core_cnt: int, name: str, node_core_cnt: int):

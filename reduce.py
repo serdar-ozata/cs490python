@@ -119,9 +119,15 @@ def reduce_post_processing(data: list[DestData], core_cnt: int, name: str):
             # update reduced_edges
             update_reduce_vtx(gen_vtx, max_idx, rcv_vtx, vtxs_to_reduce, reduced_edges, local_vtx_edges)
             # check whether gen_vtx can be used for other vertices
-            for (o_sender_idx, o_rcv_vtx, o_vtxs_to_reduce) in parsed_expands[max_idx]:
+            expands_to_remove = []
+            for i, (o_sender_idx, o_rcv_vtx, o_vtxs_to_reduce) in enumerate(parsed_expands[max_idx]):
                 if vtxs_to_reduce == o_vtxs_to_reduce:
                     update_reduce_vtx(gen_vtx, max_idx, o_rcv_vtx, o_vtxs_to_reduce, reduced_edges, local_vtx_edges)
+                    expands_to_remove.append(i)
+                elif len(o_vtxs_to_reduce) < len(vtxs_to_reduce):
+                    break
+            for i in reversed(expands_to_remove):
+                parsed_expands[max_idx].pop(i)
 
             # check whether reduced vertices can be removed from the expand list
             reduced_sender_data = data[sender_idx]

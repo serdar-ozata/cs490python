@@ -17,7 +17,7 @@ def assign_comm_list(dest_data: DestData, comm_list: list[(dict, dict)], send: b
     for vtx, rec_idx in dest_data.reassign_cores.items():
         main_idx = sender_idx if send else rec_idx
         other_idx = rec_idx if send else sender_idx
-        if other_idx not in comm_list[other_idx][0]:
+        if other_idx not in comm_list[main_idx][0]:
             comm_list[main_idx][0][other_idx] = []
         comm_list[main_idx][0][other_idx].append(vtx)
 
@@ -68,10 +68,13 @@ def update_start_positions(file, processor_start_positions):
 # writes phase partitions to binary file
 def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, partition_type: PartitionType):
     # remove reassigned vertices from the list
+    total_reassign_count = 0
     for dest_data in opt_send_list:
+        total_reassign_count += len(dest_data.reassign_cores)
         for vtx, prc in dest_data.reassign_cores.items():
-            if prc == dest_data.id:
-                dest_data.expands[vtx].remove(dest_data.id)
+            # if prc not in dest_data.expands[vtx]:
+            #     raise Exception(f"BUG: {vtx} is reassigned to {prc} but not in expands")
+            dest_data.expands[vtx].remove(prc)
     tr_vols, phase1_vols = partition.get_p1_threshold(opt_send_list)
     tr_max = np.max(tr_vols)
     phase1_min = np.min(phase1_vols)
@@ -130,8 +133,18 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
     #     avg_send_counts[i] += len(send_lists[i][0].keys()) + len(send_lists[i][1].keys())
     # print(f"send count avg: {np.mean(avg_send_counts)}, max: {np.max(avg_send_counts)}, min: {np.min(avg_send_counts)}")
     # END test
+    # test
+    # check if there is any duplicate
+    # for sl in send_lists:
+    #     for p in range(2):
+    #         for prc, vtxs in sl[p].items():
+    #             if len(vtxs) != len(set(vtxs)):
+    #                 print(vtxs)
+    #                 exit(1)
+
+    # END test
     # map reduced vtxs into processors
-    reduced_vtx_prc_map = [[] for _ in range(core_cnt)]
+    reduced_vtx_prc_map: list[list[int]] = [[] for _ in range(core_cnt)]
     for i in range(DestData.initial_vtx_cnt, len(reduce_map) + DestData.initial_vtx_cnt):
         reduced_vtx_prc_map[DestData.partition[i]].append(i)
     # Create and open the binary file with placeholder values

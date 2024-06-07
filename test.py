@@ -1,29 +1,29 @@
 import numpy as np
-
 import util
+import pandas as pd
 
+# Read the CSV file
+df = pd.read_csv("~/Downloads/uhem_results.csv")
 
-class ArgTest:
-    def __init__(self):
-        self.core_cnt = 9
-        self.volumemode = 0
-        self.noconstructive = False
-        self.noiterative = False
+# add new column to the DataFrame
+df["improvement"] = np.nan
 
+spmm_types = ["expand", "reduce"]
 
-# util.create_excel(ArgTest(), np.ones(shape=(9, 23)) * 2, ["oads", "adsas", "astreasd"])
+# Iterate over unique dataset names
+for dataset_name in df["dataset_name"].unique():
+    for spmm_type in spmm_types:
+        tp_df = df[(df["dataset_name"] == dataset_name) & (df["spmm_type"] == spmm_type) & (df["comm_type"] == "tp")][0]
+        # get the op value
+        op_df = df[(df["dataset_name"] == dataset_name) & (df["spmm_type"] == spmm_type) & (df["comm_type"] == "op")][0]
+        # calculate the improvement
+        improvement = (op_df - tp_df) / op_df
+        # update only the tp row
+        df.loc[(df["dataset_name"] == dataset_name) & (df["spmm_type"] == spmm_type) & (
+                df["comm_type"] == "tp"), "improvement"] = improvement
+        # for op row leave "-" in the improvement column
+        df.loc[(df["dataset_name"] == dataset_name) & (df["spmm_type"] == spmm_type) & (
+                df["comm_type"] == "op"), "improvement"] = "-"
 
-print((5, (5, 3)))
-
-# util.assignment_cost_test(5, 10, 10)
-
-# x = set()
-# x.add(5)
-# x.add(3)
-# x.add(2)
-# x.add(7)
-# x.add(4)
-# x.add(1)
-# x = list(x)
-# x.sort(reverse=True)
-# print(x)
+# Save the DataFrame to a new CSV file
+df.to_csv("~/Downloads/uhem_results_improved.csv", index=False)

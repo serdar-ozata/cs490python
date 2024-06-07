@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 
 from util import DestData, write_partitions, FolderM
@@ -19,17 +21,17 @@ def has_dependency(vtx: int):
     return False
 
 
-def add_rdc_vtx(vtxs: list[int], owner: int, recv_vtx: int, recv_prc: int) -> int:
+def add_rdc_vtx(vtxs: list[int], owner: int) -> int:
     """Returns the index of the added reduce vertex"""
     reduce_map.append(vtxs.copy())
     DestData.partition.append(owner)
     gen_vtx = len(reduce_map) + DestData.initial_vtx_cnt - 1
-    DestData.vtx_edges[recv_prc].update({recv_vtx: {gen_vtx}})
     return gen_vtx
 
 
-BETA = 2.0
-REDUCE_VTX_THRESHOLD = 1
+BETA = 30.0  # if BETA + avg_vol > curr_prc_vol, reduce operation is stopped
+REDUCE_VTX_THRESHOLD = 1  # if the degree of a vertex is less than this, it's not reduced
+REDUCE_PERCENTAGE = 0.7  # keep this percentage of the vertice sets as reducible vertice sets
 
 
 def get_volumes(dest_data: list[DestData]) -> list[int]:
@@ -44,11 +46,19 @@ def get_max(volumes: list[int], filled_expands: list[bool]) -> int:
     return -1  # return -1 if no such index exists
 
 
+def update_reduce_vtx(gen_vtx: int, owner_prc: int, rcv_vtx: int, vtxs_to_reduce: set[int],
+                      reduced_edges: list[set[int]], local_vtx_edges: dict[int, set[int]]):
+    DestData.vtx_edges[owner_prc].update({rcv_vtx: {gen_vtx}})
+    reduced_edges[rcv_vtx] -= vtxs_to_reduce
+    reduced_edges[rcv_vtx].add(gen_vtx)
+    local_vtx_edges.update({rcv_vtx: reduced_edges[rcv_vtx]})
+
+
 def reduce_post_processing(data: list[DestData], core_cnt: int, name: str):
-    reduced_edges = [[] for _ in range(DestData.initial_vtx_cnt)]
+    reduced_edges = [set() for _ in range(DestData.initial_vtx_cnt)]
     for d in DestData.vtx_edges:
         for rcv_vtx, edge_vtxs in d.items():
-            reduced_edges[rcv_vtx] = list(edge_vtxs)
+            reduced_edges[rcv_vtx] = edge_vtxs.copy()
 
     # int: sender prc, int: receive vtx, set: vtxs owned by the sender and have edges to receive vtx after our algorithm
     parsed_expands: list[list[(int, int, set)]] = [[] for _ in range(core_cnt)]  # filled on demand for opt. reasons
@@ -91,8 +101,9 @@ def reduce_post_processing(data: list[DestData], core_cnt: int, name: str):
             parsed_expands[max_idx].extend([(k[0], k[1], v) for k, v in local_prs_expands.items()
                                             if len(v) > REDUCE_VTX_THRESHOLD])
             parsed_expands[max_idx].sort(key=lambda x: len(x[2]))
-            # keep 30 percent of the expands
-            # parsed_expands[max_idx] = parsed_expands[max_idx][int(len(parsed_expands[max_idx]) * 0.7):]
+            # keep REDUCE_PERCENTAGE of vertice sets
+            pe_end_pt = math.ceil(len(parsed_expands[max_idx]) * REDUCE_PERCENTAGE)
+            parsed_expands[max_idx] = parsed_expands[max_idx][:pe_end_pt]
             print(f"avg expand degree: {np.mean([len(x[2]) for x in parsed_expands[max_idx]])}")
         else:
             break
@@ -103,21 +114,24 @@ def reduce_post_processing(data: list[DestData], core_cnt: int, name: str):
             sender_idx, rcv_vtx, vtxs_to_reduce = parsed_expands[max_idx].pop()
             all_skipped = False
             # reduce operation
-            gen_vtx = add_rdc_vtx(vtxs=vtxs_to_reduce, owner=sender_idx, recv_vtx=rcv_vtx, recv_prc=max_idx)
+            gen_vtx = add_rdc_vtx(vtxs=vtxs_to_reduce, owner=sender_idx)
+
             # update reduced_edges
-            reduced_edges[rcv_vtx] = [gen_vtx]
+            update_reduce_vtx(gen_vtx, max_idx, rcv_vtx, vtxs_to_reduce, reduced_edges, local_vtx_edges)
+            # check whether gen_vtx can be used for other vertices
+            for (o_sender_idx, o_rcv_vtx, o_vtxs_to_reduce) in parsed_expands[max_idx]:
+                if vtxs_to_reduce == o_vtxs_to_reduce:
+                    update_reduce_vtx(gen_vtx, max_idx, o_rcv_vtx, o_vtxs_to_reduce, reduced_edges, local_vtx_edges)
 
             # check whether reduced vertices can be removed from the expand list
             reduced_sender_data = data[sender_idx]
 
             for vtx in list(vtxs_to_reduce):
                 if vtx in reduced_sender_data.reassign_cores and reduced_sender_data.reassign_cores[vtx] == max_idx:
-                    vtxs_to_reduce.remove(vtx)  # cannot discard a vertex if it's reassigned
-            local_vtx_edges.pop(rcv_vtx, None)  # no need to update with the reduced vertex, just remove it
+                    raise ValueError("This should never happen")
+                    # vtxs_to_reduce.remove(vtx)  # cannot discard a vertex if it's reassigned
             try:
                 for f_recv_vtx, vtxs_needed in local_vtx_edges.items():
-                    # if f_recv_vtx == rcv_vtx:
-                    #     continue
                     for vtx_needed in vtxs_needed:
                         if vtx_needed in vtxs_to_reduce:
                             vtxs_to_reduce.remove(vtx_needed)
@@ -131,8 +145,10 @@ def reduce_post_processing(data: list[DestData], core_cnt: int, name: str):
                 # print(vtx_to_remove, max_idx, sender_idx)
                 if reduced_sender_data.remove_value(vtx_to_remove, max_idx):
                     removed_vtx_cnt += 1
-            if removed_vtx_cnt - 1 < 0:
-                print("reduce op incurred extra cost")
+                else:
+                    print(f"vertex {vtx_to_remove} not found in expand list of {sender_idx}")
+            # if removed_vtx_cnt - 1 < 0:
+            #     print("reduce op incurred extra cost")
             data[max_idx].decrease_recv_vol(removed_vtx_cnt - 1)
             # print(f"removed {removed_vtx_cnt} vertices from {sender_idx} to {max_idx}")
             # finally add the reduced vertex to the expand list
@@ -145,7 +161,7 @@ def reduce_post_processing(data: list[DestData], core_cnt: int, name: str):
     save_reduced_graph_and_mappings(name, core_cnt, reduced_edges)
 
 
-def save_reduced_graph_and_mappings(name, core_cnt, reduced_edges):
+def save_reduced_graph_and_mappings(name, core_cnt, reduced_edges: set[int]):
     write_partitions(DestData.partition, FolderM.get_name(f"{name}.inpart.{core_cnt}"))
     mmfname = FolderM.get_name(f"{name}.reduced.mtx")
     with open(mmfname, 'w') as f:
@@ -155,4 +171,4 @@ def save_reduced_graph_and_mappings(name, core_cnt, reduced_edges):
         f.write(f"{total_vtx_cnt} {total_vtx_cnt} {edge_cnt}\n")
         for i, edges in enumerate(reduced_edges):
             for e in edges:
-                f.write(f"{e + 1} {i + 1} 1\n")
+                f.write(f"{i + 1} {e + 1} 1\n")

@@ -96,7 +96,7 @@ class DestData:
     initial_vtx_cnt = 0
     partition: list[int, int] = []  # key: vertex, value: processor
     vtx_edges: list[dict[int, set]] = []  # key: prc, vertex, value: set of vertices
-
+    local_edges: list[(int, int)] = []  # (send_vtx, recv_vtx)
     alpha = 0.0
 
     def __init__(self, vid, recv_vol=0):
@@ -392,6 +392,7 @@ def gen_send_list(core_cnt, name, adj_mat, coo_data, wg):
         sender_idx = mappings[v_i]
         rec_idx = mappings[coo_data[1, i]]
         if rec_idx == sender_idx:
+            DestData.local_edges.append((v_i, v_j))
             continue
         if v_i not in send_list[sender_idx]:
             send_list[sender_idx][v_i] = set()

@@ -172,9 +172,11 @@ def save_reduced_graph_and_mappings(name, core_cnt, reduced_edges: set[int]):
     mmfname = FolderM.get_name(f"{name}.reduced.mtx")
     with open(mmfname, 'w') as f:
         total_vtx_cnt = DestData.initial_vtx_cnt + len(reduce_map)
-        edge_cnt = sum([len(v) for v in reduced_edges])
+        edge_cnt = sum([len(v) for v in reduced_edges]) + len(DestData.local_edges)
         f.write(f"%%MatrixMarket matrix coordinate real general\n")
         f.write(f"{total_vtx_cnt} {total_vtx_cnt} {edge_cnt}\n")
         for i, edges in enumerate(reduced_edges):
             for e in edges:
                 f.write(f"{i + 1} {e + 1} 1\n")
+        for (send_vtx, recv_vtx) in DestData.local_edges:
+            f.write(f"{send_vtx + 1} {recv_vtx + 1} 1\n")

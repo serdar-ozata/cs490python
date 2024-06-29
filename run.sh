@@ -1,6 +1,6 @@
 # variables
 interpreter="./venv/bin/python"
-declare -a dnames=("Flickr") # add multiple datasets
+declare -a dnames=("Flickr" "Yelp") # add multiple datasets
 cores=7
 alpha=0.3
 cores_per_node=1 # default

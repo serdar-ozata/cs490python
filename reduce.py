@@ -153,10 +153,7 @@ def reduce_post_processing(data: list[DestData], core_cnt: int, name: str):
                     removed_vtx_cnt += 1
                 else:
                     print(f"vertex {vtx_to_remove} not found in expand list of {sender_idx}")
-            # if removed_vtx_cnt - 1 < 0:
-            #     print("reduce op incurred extra cost")
             data[max_idx].decrease_recv_vol(removed_vtx_cnt - 1)
-            # print(f"removed {removed_vtx_cnt} vertices from {sender_idx} to {max_idx}")
             # finally add the reduced vertex to the expand list
             reduced_sender_data.insert(gen_vtx, [max_idx])
 

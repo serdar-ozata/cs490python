@@ -1,7 +1,7 @@
 # variables
 interpreter="./venv/bin/python"
-declare -a dnames=("Yelp" "Flickr") # add multiple datasets
-cores=63
+declare -a dnames=("Flickr") # add multiple datasets
+cores=7
 alpha=0.3
 cores_per_node=1 # default
 remove_reduced_mtx=1 # *.reduced.mtx files are not used by the c program, set to 0 if you'll use it for debugging purposes

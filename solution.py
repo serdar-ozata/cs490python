@@ -167,7 +167,7 @@ def execute(core_cnt, ignore_benchmark, alpha, send_list):
         launch_convert_bin1d(args.convertbin, name)
 
     # communication partition
-    two_phase_delay = partition_phases(opt_send_list, core_cnt, name, PartitionType(args.part_method))
+    two_phase_delay = partition_phases(opt_send_list, core_cnt, name, PartitionType(args.part_method), args.noreduce)
     if args.onephase:
         partition_one_phase(send_list, core_cnt, name, args.node_core_count)
 
@@ -317,7 +317,7 @@ def assign(core_dest_data: DestData, vtx: int, send_set: set, opt_send_list: lis
 
 
 def get_alpha_iterator():
-    if args.iter_alpha:
+    if "iter_alpha" in args and args.iter_alpha:
         return [x / 10 for x in range(1, 11)]
     else:
         return [args.alpha]
@@ -340,8 +340,9 @@ def start_and_execute(name, ignore_benchmark, iterator=None):
             args.alpha = alpha
             r = execute(i, ignore_benchmark, alpha, send_list)
             # add vertex count and edge count to the results
-            r = np.concatenate(([vtx_count, edge_cnt], r))
-            results.append(r)
+            if not ignore_benchmark:
+                r = np.concatenate(([vtx_count, edge_cnt], r))
+                results.append(r)
     del coo_data
     return results
 

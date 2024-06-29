@@ -66,7 +66,8 @@ def update_start_positions(file, processor_start_positions):
 
 
 # writes phase partitions to binary file
-def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, partition_type: PartitionType):
+def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, partition_type: PartitionType,
+                     noreduce: bool):
     # remove reassigned vertices from the list
     total_reassign_count = 0
     for dest_data in opt_send_list:
@@ -148,7 +149,8 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
     for i in range(DestData.initial_vtx_cnt, len(reduce_map) + DestData.initial_vtx_cnt):
         reduced_vtx_prc_map[DestData.partition[i]].append(i)
     # Create and open the binary file with placeholder values
-    fname = FolderM.get_name(f"{name}.phases.{core_cnt}.bin")
+    reduce_text = "noreduce" if noreduce else "reduced"
+    fname = FolderM.get_name(f"{name}.phases.{core_cnt}.{reduce_text}.bin")
     with open(fname, 'w+b') as file:
         init_bin_file(file, core_cnt)
         proc_ptrs = []

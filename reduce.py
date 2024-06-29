@@ -167,8 +167,8 @@ def reduce_post_processing(data: list[DestData], core_cnt: int, name: str):
     save_reduced_graph_and_mappings(name, core_cnt, reduced_edges)
 
 
-def save_reduced_graph_and_mappings(name, core_cnt, reduced_edges: set[int]):
-    write_partitions(DestData.partition, FolderM.get_name(f"{name}.inpart.{core_cnt}"))
+def save_reduced_graph_and_mappings(name, core_cnt, reduced_edges: list[set]):
+    write_partitions(DestData.partition, FolderM.get_name(f"{name}.inpart.reduced.{core_cnt}"))
     mmfname = FolderM.get_name(f"{name}.reduced.mtx")
     with open(mmfname, 'w') as f:
         total_vtx_cnt = DestData.initial_vtx_cnt + len(reduce_map)

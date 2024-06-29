@@ -122,7 +122,7 @@ def get_core_iterator():
 
 
 def execute(core_cnt, ignore_benchmark, alpha, send_list):
-    FolderM.set(name, core_cnt, alpha)
+    FolderM.set(name, core_cnt, alpha, args.node_core_count)
     # metric tracker
     t = MetricTracker()
 
@@ -164,7 +164,7 @@ def execute(core_cnt, ignore_benchmark, alpha, send_list):
     if not args.noreduce:
         reduce_post_processing(opt_send_list, core_cnt, name)
     if args.convertbin is not None:
-        launch_convert_bin1d(args.convertbin, name)
+        launch_convert_bin1d(args.convertbin, name, args.noreduce)
 
     # communication partition
     two_phase_delay = partition_phases(opt_send_list, core_cnt, name, PartitionType(args.part_method), args.noreduce)

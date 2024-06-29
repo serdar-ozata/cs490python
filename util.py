@@ -428,9 +428,9 @@ class FolderM:
     fpath = ""
 
     @staticmethod
-    def set(dataset_name: str, core_cnt: int, alpha: float):
+    def set(dataset_name: str, core_cnt: int, alpha: float, node_core_count: int):
         os.makedirs("folders", exist_ok=True)
-        FolderM.fpath = f"folders/{dataset_name}-{core_cnt}-{alpha}"
+        FolderM.fpath = f"folders/{dataset_name}-{core_cnt}-{alpha}-cpn{node_core_count}"
         os.makedirs(FolderM.fpath, exist_ok=True)
 
     @staticmethod
@@ -445,11 +445,11 @@ def write_partitions(mappings: list, fname: str):
             file.write(f"{m}\n")
 
 
-def launch_convert_bin1d(launch_script: str, dataset_name: str):
-    inpart_name = FolderM.get_name(f'{dataset_name}.reduced.mtx')
-    if not os.path.exists(inpart_name):
+def launch_convert_bin1d(launch_script: str, dataset_name: str, noreduce: bool):
+    if noreduce:
         inpart_name = f"mmdsets/{dataset_name}.mtx"
         extract_pth = "schemes"
     else:
+        inpart_name = FolderM.get_name(f'{dataset_name}.reduced.mtx')
         extract_pth = "."
     os.system(f"{launch_script} {inpart_name} {extract_pth}")

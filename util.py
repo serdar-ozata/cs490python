@@ -2,6 +2,7 @@ import math
 import os
 import time
 from enum import Enum
+import random
 
 import numpy as np
 import pymetis
@@ -378,6 +379,9 @@ def gen_send_list(core_cnt, name, adj_mat, coo_data, wg):
     if mexists:
         mappings = get_mapping(core_cnt, name)
     else:
+        opt = pymetis.Options()
+        opt.set_defaults()
+        opt.__setattr__("seed", random.randint(0, 1000))
         mappings = pymetis.part_graph(core_cnt, adjacency=adj_mat, vweights=wg)[1]
 
     send_list: list[dict[set]] = [dict() for _ in range(core_cnt)]  # keys are vtxs, values are sets of receiver prcrs

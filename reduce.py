@@ -31,11 +31,11 @@ def add_rdc_vtx(vtxs: list[int], owner: int) -> int:
 
 BETA = 30.0  # if BETA + avg_vol > curr_prc_vol, reduce operation is stopped
 REDUCE_VTX_THRESHOLD = 1  # if the degree of a vertex is less than this, it's not reduced
-REDUCE_PERCENTAGE = 0.7  # keep this percentage of the vertice sets as reducible vertice sets
+REDUCE_PERCENTAGE = 1.0  # keep this percentage of the vertice sets as reducible vertice sets
 
 
 def get_volumes(dest_data: list[DestData]) -> list[int]:
-    return [d.volume() for d in dest_data]
+    return [d.real_volume() for d in dest_data]
 
 
 def get_max(volumes: list[int], filled_expands: list[bool]) -> int:
@@ -157,7 +157,7 @@ def reduce_post_processing(data: list[DestData], core_cnt: int, name: str):
             # finally add the reduced vertex to the expand list
             reduced_sender_data.insert(gen_vtx, [max_idx])
 
-            if avg_vol + BETA > data[max_idx].volume():  # can't use vls since it's outdated
+            if avg_vol + BETA > data[max_idx].real_volume():  # can't use vls since it's outdated
                 break
         if all_skipped:
             break

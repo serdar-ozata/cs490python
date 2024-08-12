@@ -114,14 +114,14 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
     total_recv_vols = [recv_vols[0][i] + recv_vols[1][i] for i in range(core_cnt)]
     max_send_vol = np.max(total_send_vols)
     max_recv_vol = np.max(total_recv_vols)
-    avg_send_vol = int(np.mean(total_send_vols))
-    avg_recv_vol = int(np.mean(total_recv_vols))
+    avg_send_vol = int(np.floor(np.mean(total_send_vols)))
+    avg_recv_vol = int(np.floor(np.mean(total_recv_vols)))
     send_counts = [len(send_lists[i][0]) + len(send_lists[i][1]) for i in range(core_cnt)]
     recv_counts = [len(recv_lists[i][0]) + len(recv_lists[i][1]) for i in range(core_cnt)]
     max_send_count = np.max(send_counts)
     max_recv_count = np.max(recv_counts)
-    avg_send_count = int(np.mean(send_counts))
-    avg_recv_count = int(np.mean(recv_counts))
+    avg_send_count = int(np.floor(np.mean(send_counts)))
+    avg_recv_count = int(np.floor(np.mean(recv_counts)))
     print(
         f"{name} {core_cnt}:{max_send_vol},{avg_send_vol},{max_recv_vol},{avg_recv_vol},{avg_send_count},{max_send_count},{avg_recv_count},{max_recv_count}")
     print(f"total send volume: {np.sum(send_vols[0]) + np.sum(send_vols[1])}")

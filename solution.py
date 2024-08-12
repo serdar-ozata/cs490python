@@ -2,17 +2,17 @@ import math
 import random
 import time
 import numpy as np
-import pymetis
 
-import metricsout
 import util
 import argparse
 from tqdm import tqdm
+
+from metisio import gen_send_list
 from util import Assigment, MetricTracker, DestData, MIN_REASSIGN_LIMIT, get_opt_send_list, PartitionType, FolderM, \
     launch_convert_bin1d
 from binout import partition_phases, partition_one_phase
 from metricsout import create_excel
-from reduce import reduce_post_processing, get_rdc, reduce_map
+from reduce import reduce_post_processing
 
 epilog_text = '''Matrix market files are read from the ./mmdsets foler. Phase partition file is written to the ./out 
     folder. The other inpart files are written to ./mmdsets/schemes folder.'''
@@ -88,6 +88,7 @@ benchmark_parser.add_argument("--iter-alpha", action="store_true",
                               help="If set, the alpha value will be iterated from 0.0 to 1.0 with 0.1 increments",
                               default=False)
 
+start_time = time.perf_counter()
 args = parser.parse_args()
 
 dec_order = True
@@ -332,7 +333,7 @@ def start_and_execute(name, ignore_benchmark, iterator=None):
         iterator = [args.core_cnt]
     results = []
     for i in iterator:
-        send_list = util.gen_send_list(i, name, adj_mat, coo_data, wg)
+        send_list = gen_send_list(i, name, adj_mat, coo_data, wg)
         edge_cnt = len(coo_data[0])
         for alpha in get_alpha_iterator():
             # remove reduced vertices
@@ -357,3 +358,6 @@ elif args.mode == 'benchmark':
         results.extend(start_and_execute(name, False, get_core_iterator()))
     create_excel(args, results, args.datasets)
 # else part is unreachable
+
+end_time = time.perf_counter()
+print(f"Execution time: {end_time - start_time} seconds")

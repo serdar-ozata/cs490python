@@ -1,15 +1,11 @@
 import math
 import os
-import time
+import struct
 from enum import Enum
-import random
 
 import numpy as np
-import pymetis
-from scipy.io import mminfo, mmread, mmwrite
-
+from scipy.io import mminfo, mmread
 from torch_geometric.datasets import Planetoid, PPI, Reddit, Amazon, KarateClub, AmazonProducts, Yelp, Flickr
-import torch_geometric.transforms as transforms
 
 MIN_REASSIGN_LIMIT = 2
 
@@ -43,6 +39,7 @@ def get_coo_mat(dataset_name):
             # remove values from the matrix only row and col
             coo_data = np.array([coo_data.row, coo_data.col])
             vtx_count = nr
+            print(f"Edges: {nnz}")
 
     if is_from_torch:
         data = dataset[0]
@@ -51,17 +48,20 @@ def get_coo_mat(dataset_name):
         # write the matrix market file from coo_data
         mmfpath = f"mmdsets/{dataset_name}.mtx"
         if not os.path.exists(mmfpath):
+            edge_cnt = len(coo_data[0])
             with open(mmfpath, "w") as f:
                 f.write(f"%%MatrixMarket matrix coordinate real general\n")
                 f.write(f"{vtx_count} {vtx_count} {len(coo_data[0])}\n")
-                for i in range(len(coo_data[0])):
+                for i in range(edge_cnt):
                     f.write(f"{coo_data[0][i] + 1} {coo_data[1][i] + 1} 1\n")
 
     adj = [[] for _ in range(vtx_count)]
     wg = np.zeros(dtype=int, shape=vtx_count)
     for i in range(len(coo_data[0])):
         adj[coo_data[0][i]].append(coo_data[1][i])
+        # adj[coo_data[1][i]].append(coo_data[0][i])
         wg[coo_data[0][i]] += 1
+        # wg[coo_data[1][i]] += 1
     return coo_data, vtx_count, adj, wg
 
 
@@ -363,55 +363,6 @@ def get_node_range(core_idx: int, core_cnt: int, node_core_cnt):
     return int(start), int(end)
 
 
-def mapping_exists(core_cnt, name):
-    return os.path.exists(f"mmdsets/schemes/{name}.inpart.{core_cnt}")
-
-
-def get_mapping(core_cnt, name):
-    with open(f"mmdsets/schemes/{name}.inpart.{core_cnt}") as f:
-        return [int(x) for x in f.read().split()]
-
-
-def gen_send_list(core_cnt, name, adj_mat, coo_data, wg):
-    # generate a random ownership list
-    # check whether mapping exists
-    mexists = mapping_exists(core_cnt, name)
-    if mexists:
-        mappings = get_mapping(core_cnt, name)
-    else:
-        opt = pymetis.Options()
-        opt.set_defaults()
-        opt.__setattr__("seed", random.randint(0, 1000))
-        mappings = pymetis.part_graph(core_cnt, adjacency=adj_mat, vweights=wg)[1]
-
-    send_list: list[dict[set]] = [dict() for _ in range(core_cnt)]  # keys are vtxs, values are sets of receiver prcrs
-    vtx_reqs: list[dict[set]] = [dict() for _ in range(core_cnt)]  # keys are vtxs, values are sets of sender vtxs
-    DestData.vtx_edges = vtx_reqs
-    DestData.partition = mappings
-    DestData.recv_vtxs = [set() for _ in range(core_cnt)]
-    # parse the data
-    for i in range(len(coo_data[0])):
-        v_i = coo_data[0, i]
-        v_j = coo_data[1, i]
-        sender_idx = mappings[v_i]
-        rec_idx = mappings[coo_data[1, i]]
-        if rec_idx == sender_idx:
-            DestData.local_edges.append((v_i, v_j))
-            continue
-        if v_i not in send_list[sender_idx]:
-            send_list[sender_idx][v_i] = set()
-        send_list[sender_idx][v_i].add(rec_idx)
-        if v_j not in vtx_reqs[rec_idx]:
-            vtx_reqs[rec_idx][v_j] = set()
-        vtx_reqs[rec_idx][v_j].add(v_i)
-        DestData.recv_vtxs[rec_idx].add(v_i)
-    # save mapping
-    if not mexists:
-        write_partitions(mappings, f"mmdsets/schemes/{name}.inpart.{core_cnt}")
-
-    return send_list
-
-
 def parse_processor_based_lists(send_list, core_cnt):
     recv_lists = [dict() for _ in range(core_cnt)]
     send_lists = [dict() for _ in range(core_cnt)]
@@ -442,13 +393,6 @@ class FolderM:
         return f"{FolderM.fpath}/{name}"
 
 
-# writes vertex mappings to binary file
-def write_partitions(mappings: list, fname: str):
-    with open(fname, 'w') as file:
-        for m in mappings:
-            file.write(f"{m}\n")
-
-
 def launch_convert_bin1d(launch_script: str, dataset_name: str, noreduce: bool):
     if noreduce:
         inpart_name = f"mmdsets/{dataset_name}.mtx"
@@ -457,3 +401,9 @@ def launch_convert_bin1d(launch_script: str, dataset_name: str, noreduce: bool):
         inpart_name = FolderM.get_name(f'{dataset_name}.reduced.mtx')
         extract_pth = "."
     os.system(f"{launch_script} {inpart_name} {extract_pth}")
+
+
+def write_bin_file(file, arr: list[int]):
+    # Writing array
+    for element in arr:
+        file.write(struct.pack('i', element))

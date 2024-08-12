@@ -117,16 +117,6 @@ def main():
               for dirpath, dirnames, files in os.walk(path)
               for f in fnmatch.filter(files, match_regex)]
     print(f"Found {len(pfiles)} files")
-    # procs = [None] * len(pfiles)
-    # for i in range(len(pfiles)):
-    #     K = pfiles[i].split('bu_CN_')[1]
-    #     K = int(K.split('_')[0])
-    #     procs[i] = Process(target=writeBUBinPartSingle,
-    #                        args=(pfiles[i], nr, nc, nnz, matrows, K))
-    # for i in range(len(pfiles)):
-    #     procs[i].start()
-    # for i in range(len(pfiles)):
-    #     procs[i].join()
 
     for i in range(len(pfiles)):
         # either core count is after inpart. or after reduced.

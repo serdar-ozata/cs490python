@@ -7,7 +7,7 @@ import numpy as np
 
 import partition
 import util
-from util import DestData, PartitionType, FolderM
+from util import DestData, PartitionType, FolderM, write_bin_file
 from reduce import reduce_map, get_rdc
 
 
@@ -50,12 +50,6 @@ def init_bin_file(file, num_processors):
     # Writing n * 8 bytes as a placeholder for processor start positions
     for _ in range(num_processors):
         file.write(struct.pack('q', 0))
-
-
-def write_bin_file(file, arr):
-    # Writing array
-    for element in arr:
-        file.write(struct.pack('i', element))
 
 
 def update_start_positions(file, processor_start_positions):
@@ -116,6 +110,21 @@ def partition_phases(opt_send_list: list[DestData], core_cnt: int, name: str, pa
     if np.sum(send_vols[0]) != np.sum(recv_vols[0]) or np.sum(send_vols[1]) != np.sum(recv_vols[1]):
         print("BUG: send and recv volumes are not equal")
         exit(1)
+    total_send_vols = [send_vols[0][i] + send_vols[1][i] for i in range(core_cnt)]
+    total_recv_vols = [recv_vols[0][i] + recv_vols[1][i] for i in range(core_cnt)]
+    max_send_vol = np.max(total_send_vols)
+    max_recv_vol = np.max(total_recv_vols)
+    avg_send_vol = int(np.mean(total_send_vols))
+    avg_recv_vol = int(np.mean(total_recv_vols))
+    send_counts = [len(send_lists[i][0]) + len(send_lists[i][1]) for i in range(core_cnt)]
+    recv_counts = [len(recv_lists[i][0]) + len(recv_lists[i][1]) for i in range(core_cnt)]
+    max_send_count = np.max(send_counts)
+    max_recv_count = np.max(recv_counts)
+    avg_send_count = int(np.mean(send_counts))
+    avg_recv_count = int(np.mean(recv_counts))
+    print(
+        f"{name} {core_cnt}:{max_send_vol},{avg_send_vol},{max_recv_vol},{avg_recv_vol},{avg_send_count},{max_send_count},{avg_recv_count},{max_recv_count}")
+    print(f"total send volume: {np.sum(send_vols[0]) + np.sum(send_vols[1])}")
     # test
     # dep_counts = np.zeros((core_cnt, core_cnt), dtype=int)
     # dep_sets = [set() for _ in range(core_cnt * core_cnt)]

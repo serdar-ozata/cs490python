@@ -2,7 +2,8 @@ import math
 
 import numpy as np
 
-from util import DestData, write_partitions, FolderM
+from util import DestData, FolderM
+from metisio import write_partitions
 
 reduce_map = []
 

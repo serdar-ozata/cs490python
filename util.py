@@ -120,7 +120,7 @@ class DestData:
 
     def real_volume(self):
         if DestData.alpha == 0:
-            raise Exception("Invalid alpha value!")
+            return self.send_vol
         return self.send_vol + self.recv_vol / DestData.alpha
 
     def decrease_recv_vol(self, val):
